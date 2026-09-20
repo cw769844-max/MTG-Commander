@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import type { GameLogEntry, GameState, TurnPhase, ZoneId } from "@mtg-commander/shared";
 import { socket } from "../socket";
@@ -39,11 +39,25 @@ export default function GameTable() {
   const [error, setError] = useState<string | null>(null);
   const { get: getCard, ensure: ensureCard } = useCardCache();
 
-  const joinedRef = useRef(false);
-
   useEffect(() => {
-    if (joinedRef.current) return;
-    joinedRef.current = true;
+    // Named handlers (rather than inline closures passed straight to `.on`)
+    // so cleanup can remove exactly what this effect run added. Needed for
+    // React 18 StrictMode, which mounts effects twice in dev: without
+    // symmetric add/remove, the first run's cleanup either leaves listeners
+    // behind (duplicated log/chat entries) or, if it disconnects the shared
+    // socket, kills the second run's connection before it can join.
+    const handleState = (state: GameState) => setGameState(state);
+    const handleLog = (entry: GameLogEntry) => {
+      setGameState((prev) => (prev ? { ...prev, log: [...prev.log, entry] } : prev));
+    };
+    const handleChat = (msg: { seat: number; message: string; timestamp: string }) =>
+      setChat((prev) => [...prev, msg]);
+    const handleError = (e: { message: string }) => setError(e.message);
+
+    socket.on("room:state", handleState);
+    socket.on("game:log", handleLog);
+    socket.on("chat:message", handleChat);
+    socket.on("error", handleError);
 
     socket.connect();
     socket.emit("room:join", { roomCode, displayName, deckId }, (result) => {
@@ -55,16 +69,12 @@ export default function GameTable() {
       setMySeat(result.seat);
     });
 
-    socket.on("room:state", setGameState);
-    socket.on("game:log", (entry: GameLogEntry) => {
-      setGameState((prev) => (prev ? { ...prev, log: [...prev.log, entry] } : prev));
-    });
-    socket.on("chat:message", (msg) => setChat((prev) => [...prev, msg]));
-    socket.on("error", (e) => setError(e.message));
-
     return () => {
       socket.emit("room:leave");
-      socket.off("room:state", setGameState);
+      socket.off("room:state", handleState);
+      socket.off("game:log", handleLog);
+      socket.off("chat:message", handleChat);
+      socket.off("error", handleError);
       socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,8 +83,8 @@ export default function GameTable() {
   const connectedSeats = (gameState?.players ?? []).filter((p) => p.connected).map((p) => p.seat);
   const { localStream, remoteStreams } = useWebRTCMesh(socket, mySeat, connectedSeats, true);
 
-  function moveObject(instanceId: string, toZone: ZoneId) {
-    socket.emit("game:moveObject", { instanceId, toZone });
+  function moveObject(instanceId: string, toZone: ZoneId, x?: number, y?: number) {
+    socket.emit("game:moveObject", { instanceId, toZone, x, y });
   }
 
   function toggleTap(instanceId: string, tapped: boolean) {

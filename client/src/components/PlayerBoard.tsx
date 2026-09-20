@@ -1,5 +1,7 @@
 import type { Card, GameObject, PlayerState, ZoneId } from "@mtg-commander/shared";
+import BattlefieldZone from "./BattlefieldZone";
 import GameObjectCard from "./GameObjectCard";
+import ZoneDropArea from "./ZoneDropArea";
 
 interface Props {
   player: PlayerState;
@@ -7,13 +9,13 @@ interface Props {
   mySeat: number | null;
   getCard: (oracleId: string) => Card | undefined;
   ensureCard: (oracleId: string) => void;
-  onMove: (instanceId: string, zone: ZoneId) => void;
+  onMove: (instanceId: string, zone: ZoneId, x?: number, y?: number) => void;
   onToggleTap: (instanceId: string, tapped: boolean) => void;
   onSetLife: (life: number) => void;
   onSetCommanderDamageFromMe: (amount: number) => void;
 }
 
-const VISIBLE_ZONES: ZoneId[] = ["battlefield", "graveyard", "exile", "command"];
+const STACK_ZONES: ZoneId[] = ["graveyard", "exile", "command"];
 
 export default function PlayerBoard({
   player,
@@ -31,6 +33,7 @@ export default function PlayerBoard({
 
   const hand = objects.filter((o) => o.zone === "hand");
   const library = objects.filter((o) => o.zone === "library");
+  const battlefield = objects.filter((o) => o.zone === "battlefield");
   const damageFromMe = mySeat !== null ? player.commanderDamageTaken[mySeat] ?? 0 : 0;
 
   return (
@@ -60,46 +63,57 @@ export default function PlayerBoard({
         </div>
       </div>
 
-      <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>
-        Library: {library.length} · Hand: {hand.length}
-      </div>
+      <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>Library: {library.length}</div>
 
-      {isMine && hand.length > 0 && (
+      {isMine && (
         <>
           <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem" }}>Your hand</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}>
-            {hand.map((obj) => (
-              <GameObjectCard
-                key={obj.instanceId}
-                obj={obj}
-                card={getCard(obj.cardOracleId)}
-                hidden={false}
-                onMove={(zone) => onMove(obj.instanceId, zone)}
-                onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {VISIBLE_ZONES.map((zone) => {
-        const zoneObjects = objects.filter((o) => o.zone === zone);
-        if (zoneObjects.length === 0) return null;
-        return (
-          <div key={zone} style={{ marginBottom: "0.5rem" }}>
-            <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem", textTransform: "capitalize" }}>{zone}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              {zoneObjects.map((obj) => (
+          <ZoneDropArea onDropInstance={(instanceId) => onMove(instanceId, "hand")}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem", minHeight: "1.5rem" }}>
+              {hand.map((obj) => (
                 <GameObjectCard
                   key={obj.instanceId}
                   obj={obj}
                   card={getCard(obj.cardOracleId)}
                   hidden={false}
-                  onMove={(z) => onMove(obj.instanceId, z)}
+                  onMove={(zone) => onMove(obj.instanceId, zone)}
                   onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
                 />
               ))}
             </div>
+          </ZoneDropArea>
+        </>
+      )}
+
+      <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem" }}>Battlefield</div>
+      <BattlefieldZone
+        objects={battlefield}
+        getCard={getCard}
+        onDropAt={(instanceId, x, y) => onMove(instanceId, "battlefield", x, y)}
+        onMoveZone={(instanceId, zone) => onMove(instanceId, zone)}
+        onToggleTap={onToggleTap}
+      />
+
+      {STACK_ZONES.map((zone) => {
+        const zoneObjects = objects.filter((o) => o.zone === zone);
+        if (zoneObjects.length === 0) return null;
+        return (
+          <div key={zone} style={{ marginBottom: "0.5rem" }}>
+            <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem", textTransform: "capitalize" }}>{zone}</div>
+            <ZoneDropArea onDropInstance={(instanceId) => onMove(instanceId, zone)}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                {zoneObjects.map((obj) => (
+                  <GameObjectCard
+                    key={obj.instanceId}
+                    obj={obj}
+                    card={getCard(obj.cardOracleId)}
+                    hidden={false}
+                    onMove={(z) => onMove(obj.instanceId, z)}
+                    onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+                  />
+                ))}
+              </div>
+            </ZoneDropArea>
           </div>
         );
       })}

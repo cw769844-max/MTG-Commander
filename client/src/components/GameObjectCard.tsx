@@ -15,10 +15,16 @@ export default function GameObjectCard({ obj, card, hidden, onMove, onToggleTap 
   return (
     <div
       className="card-tile"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", obj.instanceId);
+        e.dataTransfer.effectAllowed = "move";
+      }}
       style={{
         width: "100px",
         transform: obj.tapped ? "rotate(90deg)" : undefined,
         transition: "transform 0.15s",
+        cursor: "grab",
       }}
     >
       {hidden || !card ? (
