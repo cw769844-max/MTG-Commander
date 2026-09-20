@@ -1,0 +1,108 @@
+import type { Card, GameObject, PlayerState, ZoneId } from "@mtg-commander/shared";
+import GameObjectCard from "./GameObjectCard";
+
+interface Props {
+  player: PlayerState;
+  objects: GameObject[];
+  mySeat: number | null;
+  getCard: (oracleId: string) => Card | undefined;
+  ensureCard: (oracleId: string) => void;
+  onMove: (instanceId: string, zone: ZoneId) => void;
+  onToggleTap: (instanceId: string, tapped: boolean) => void;
+  onSetLife: (life: number) => void;
+  onSetCommanderDamageFromMe: (amount: number) => void;
+}
+
+const VISIBLE_ZONES: ZoneId[] = ["battlefield", "graveyard", "exile", "command"];
+
+export default function PlayerBoard({
+  player,
+  objects,
+  mySeat,
+  getCard,
+  ensureCard,
+  onMove,
+  onToggleTap,
+  onSetLife,
+  onSetCommanderDamageFromMe,
+}: Props) {
+  const isMine = player.seat === mySeat;
+  for (const obj of objects) ensureCard(obj.cardOracleId);
+
+  const hand = objects.filter((o) => o.zone === "hand");
+  const library = objects.filter((o) => o.zone === "library");
+  const damageFromMe = mySeat !== null ? player.commanderDamageTaken[mySeat] ?? 0 : 0;
+
+  return (
+    <div style={{ border: "1px solid #2a2d36", borderRadius: "8px", padding: "0.75rem", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <strong>
+          {player.displayName} (seat {player.seat}) {!player.connected && "— disconnected"}
+        </strong>
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <span>
+            Life:{" "}
+            {isMine ? (
+              <>
+                <button onClick={() => onSetLife(player.life - 1)}>-</button> {player.life}{" "}
+                <button onClick={() => onSetLife(player.life + 1)}>+</button>
+              </>
+            ) : (
+              player.life
+            )}
+          </span>
+          {mySeat !== null && !isMine && (
+            <span>
+              Commander dmg from you: <button onClick={() => onSetCommanderDamageFromMe(Math.max(0, damageFromMe - 1))}>-</button>{" "}
+              {damageFromMe} <button onClick={() => onSetCommanderDamageFromMe(damageFromMe + 1)}>+</button>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>
+        Library: {library.length} · Hand: {hand.length}
+      </div>
+
+      {isMine && hand.length > 0 && (
+        <>
+          <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem" }}>Your hand</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            {hand.map((obj) => (
+              <GameObjectCard
+                key={obj.instanceId}
+                obj={obj}
+                card={getCard(obj.cardOracleId)}
+                hidden={false}
+                onMove={(zone) => onMove(obj.instanceId, zone)}
+                onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {VISIBLE_ZONES.map((zone) => {
+        const zoneObjects = objects.filter((o) => o.zone === zone);
+        if (zoneObjects.length === 0) return null;
+        return (
+          <div key={zone} style={{ marginBottom: "0.5rem" }}>
+            <div style={{ fontSize: "0.8rem", marginBottom: "0.25rem", textTransform: "capitalize" }}>{zone}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {zoneObjects.map((obj) => (
+                <GameObjectCard
+                  key={obj.instanceId}
+                  obj={obj}
+                  card={getCard(obj.cardOracleId)}
+                  hidden={false}
+                  onMove={(z) => onMove(obj.instanceId, z)}
+                  onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

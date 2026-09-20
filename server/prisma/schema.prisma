@@ -1,0 +1,62 @@
+// Dev datasource is SQLite for zero-infra local setup. Swap provider to
+// "postgresql" and set DATABASE_URL for production; the schema itself
+// stays the same across both.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Card {
+  oracleId          String  @id
+  name              String
+  manaCost          String?
+  cmc               Float
+  typeLine          String
+  oracleText        String?
+  colors            String // JSON-encoded string[]
+  colorIdentity     String // JSON-encoded string[]
+  power             String?
+  toughness         String?
+  loyalty           String?
+  imageNormal       String?
+  imageArtCrop      String?
+  scryfallUri       String
+  commanderLegality String // "legal" | "banned" | "restricted" | "not_legal"
+  isGameChanger     Boolean @default(false)
+  canBeCommander    Boolean @default(false)
+  updatedAt         DateTime @updatedAt
+
+  @@index([name])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  decks     Deck[]
+}
+
+model Deck {
+  id        String     @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User       @relation(fields: [ownerId], references: [id])
+  cards     DeckCard[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model DeckCard {
+  id           String  @id @default(cuid())
+  deckId       String
+  deck         Deck    @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  cardOracleId String
+  quantity     Int     @default(1)
+  isCommander  Boolean @default(false)
+
+  @@index([deckId])
+}
