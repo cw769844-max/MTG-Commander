@@ -48,6 +48,11 @@ export interface PlayerState {
   deckId: string | null;
 }
 
+export interface SpectatorInfo {
+  userId: string;
+  displayName: string;
+}
+
 export interface GameLogEntry {
   id: string;
   timestamp: string;
@@ -59,6 +64,8 @@ export interface GameLogEntry {
 export interface GameState {
   roomCode: string;
   players: PlayerState[];
+  /** Watchers with no seat. Public, so a table knows who is looking on. */
+  spectators: SpectatorInfo[];
   objects: GameObject[];
   log: GameLogEntry[];
   turnSeat: number;

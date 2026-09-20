@@ -31,6 +31,16 @@ interface SocketData {
 // the intended peer instead of broadcasting it to the whole room.
 const seatSockets = new Map<string, Map<number, string>>();
 
+// roomCode -> spectator socket ids. Kept apart from seats because spectators
+// have no seat and must never be treated as one when redacting state.
+const spectatorSockets = new Map<string, Set<string>>();
+
+function addSpectatorSocket(roomCode: string, socketId: string) {
+  const existing = spectatorSockets.get(roomCode) ?? new Set<string>();
+  existing.add(socketId);
+  spectatorSockets.set(roomCode, existing);
+}
+
 export function registerGameHandlers(io: IOServer) {
   io.use((socket, next) => {
     const cookies = parseCookie(socket.handshake.headers.cookie ?? "");
@@ -46,9 +56,32 @@ export function registerGameHandlers(io: IOServer) {
   io.on("connection", (socket: IOSocket) => {
     const data = socket.data as SocketData;
 
-    socket.on("room:join", async ({ roomCode, displayName, deckId }, ack) => {
+    socket.on("room:join", async ({ roomCode, displayName, deckId, asSpectator }, ack) => {
       const userId = data.userId!;
-      const room = roomManager.getOrCreate(roomCode.toUpperCase());
+      const code = roomCode.toUpperCase();
+
+      if (asSpectator) {
+        // Watching shouldn't conjure a room that nobody is playing in.
+        const room = roomManager.get(code);
+        if (!room) {
+          ack({ ok: false, error: "No game is running with that code." });
+          return;
+        }
+
+        room.addSpectator(userId, displayName);
+        data.roomCode = code;
+        data.seat = undefined;
+        data.displayName = displayName;
+
+        socket.join(code);
+        addSpectatorSocket(code, socket.id);
+
+        ack({ ok: true, state: redactStateFor(room.state, null), seat: null });
+        broadcastState(io, room);
+        return;
+      }
+
+      const room = roomManager.getOrCreate(code);
 
       const result = await room.join(userId, displayName, deckId);
       if ("error" in result) {
@@ -181,6 +214,7 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:setPhase", ({ phase }) => {
       withRoom(socket, (room) => {
+        if (data.seat === undefined) return; // spectators don't run the turn
         room.setPhase(phase);
         broadcastState(io, room);
       });
@@ -188,6 +222,7 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:passTurn", () => {
       withRoom(socket, (room) => {
+        if (data.seat === undefined) return;
         room.passTurn();
         broadcastState(io, room);
       });
@@ -195,7 +230,8 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:log", ({ message }) => {
       withRoom(socket, (room) => {
-        const entry = room.log(message, data.seat ?? null);
+        if (data.seat === undefined) return; // the game log belongs to the players
+        const entry = room.log(message, data.seat);
         io.to(room.state.roomCode).emit("game:log", entry);
       });
     });
@@ -217,9 +253,17 @@ export function registerGameHandlers(io: IOServer) {
       io.to(room.state.roomCode).emit("game:log", entry);
     });
 
+    // Spectators may chat: they only ever saw public information anyway, so
+    // there is nothing for them to give away. Their messages are labelled.
     socket.on("chat:message", ({ message }) => {
-      if (!data.roomCode || data.seat === undefined) return;
-      io.to(data.roomCode).emit("chat:message", { seat: data.seat, message, timestamp: new Date().toISOString() });
+      if (!data.roomCode) return;
+      io.to(data.roomCode).emit("chat:message", {
+        seat: data.seat ?? null,
+        displayName: data.displayName ?? "Player",
+        isSpectator: data.seat === undefined,
+        message,
+        timestamp: new Date().toISOString(),
+      });
     });
 
     socket.on("rtc:signal", ({ toSeat, data: payload }) => {
@@ -340,10 +384,15 @@ async function cardName(oracleId: string | null): Promise<string> {
  * so no client ever holds cards it isn't entitled to see.
  */
 function broadcastState(io: IOServer, room: Room) {
-  const sockets = seatSockets.get(room.state.roomCode);
-  if (!sockets) return;
-  for (const [seat, socketId] of sockets) {
+  for (const [seat, socketId] of seatSockets.get(room.state.roomCode) ?? []) {
     io.to(socketId).emit("room:state", redactStateFor(room.state, seat));
+  }
+
+  // Spectators share one view, since none of them is entitled to more.
+  const watching = spectatorSockets.get(room.state.roomCode);
+  if (watching?.size) {
+    const spectatorView = redactStateFor(room.state, null);
+    for (const socketId of watching) io.to(socketId).emit("room:state", spectatorView);
   }
 }
 
@@ -362,9 +411,16 @@ function handleLeave(socket: IOSocket, io: IOServer) {
   if (!room) return;
   room.leave(data.userId);
   socket.leave(data.roomCode);
-  seatSockets.get(data.roomCode)?.delete(data.seat ?? -1);
-  io.to(data.roomCode).emit("room:playerLeft", { seat: data.seat ?? -1 });
+  if (data.seat === undefined) {
+    spectatorSockets.get(data.roomCode)?.delete(socket.id);
+  } else {
+    seatSockets.get(data.roomCode)?.delete(data.seat);
+    io.to(data.roomCode).emit("room:playerLeft", { seat: data.seat });
+  }
   broadcastState(io, room);
   roomManager.cleanupIfEmpty(data.roomCode);
-  if (roomManager.get(data.roomCode) === undefined) seatSockets.delete(data.roomCode);
+  if (roomManager.get(data.roomCode) === undefined) {
+    seatSockets.delete(data.roomCode);
+    spectatorSockets.delete(data.roomCode);
+  }
 }

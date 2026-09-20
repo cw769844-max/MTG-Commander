@@ -16,6 +16,7 @@ export default function Lobby() {
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [deckId, setDeckId] = useState<string>("");
   const [joinCode, setJoinCode] = useState("");
+  const [watchCode, setWatchCode] = useState("");
   const [podSize, setPodSize] = useState<PodSize>(4);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -149,6 +150,25 @@ export default function Lobby() {
       </div>
 
       <p style={{ marginTop: "1rem", opacity: 0.7 }}>Up to 4 players per game. Share the room code with your pod.</p>
+
+      <h2>Watch a game</h2>
+      <p style={{ fontSize: "0.85rem", opacity: 0.8, marginTop: 0 }}>
+        Spectators see the same thing as someone standing behind the table: the battlefield and everyone's graveyards,
+        but no hands or libraries.
+      </p>
+      <div>
+        <input placeholder="Room code" value={watchCode} onChange={(e) => setWatchCode(e.target.value.toUpperCase())} />
+        <button
+          onClick={() =>
+            navigate(`/game/${watchCode.trim()}`, {
+              state: { displayName: user!.displayName, deckId: null, asSpectator: true },
+            })
+          }
+          disabled={!watchCode.trim()}
+        >
+          Watch game
+        </button>
+      </div>
     </div>
   );
 }

@@ -26,15 +26,20 @@ const PHASES: TurnPhase[] = [
 export default function GameTable() {
   const { roomCode = "" } = useParams<{ roomCode: string }>();
   const location = useLocation();
-  const navState = location.state as { displayName?: string; deckId?: string | null } | null;
+  const navState = location.state as
+    | { displayName?: string; deckId?: string | null; asSpectator?: boolean }
+    | null;
   const { user } = useAuth();
 
   const [displayName] = useState(() => navState?.displayName || user?.displayName || "Player");
   const [deckId] = useState(() => navState?.deckId ?? null);
+  const [asSpectator] = useState(() => navState?.asSpectator === true);
 
   const [gameState, setGameState] = useState<ClientGameState | null>(null);
   const [mySeat, setMySeat] = useState<number | null>(null);
-  const [chat, setChat] = useState<Array<{ seat: number; message: string; timestamp: string }>>([]);
+  const [chat, setChat] = useState<
+    Array<{ seat: number | null; displayName: string; isSpectator: boolean; message: string; timestamp: string }>
+  >([]);
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [librarySearch, setLibrarySearch] = useState<GameObject[] | null>(null);
@@ -53,7 +58,7 @@ export default function GameTable() {
     const handleLog = (entry: GameLogEntry) => {
       setGameState((prev) => (prev ? { ...prev, log: [...prev.log, entry] } : prev));
     };
-    const handleChat = (msg: { seat: number; message: string; timestamp: string }) =>
+    const handleChat = (msg: { seat: number | null; displayName: string; isSpectator: boolean; message: string; timestamp: string }) =>
       setChat((prev) => [...prev, msg]);
     const handleError = (e: { message: string }) => setError(e.message);
     const handleTargeted = ({ instanceId, kind }: { instanceId: string; kind: TargetKind }) => {
@@ -75,7 +80,7 @@ export default function GameTable() {
     socket.on("game:targeted", handleTargeted);
 
     socket.connect();
-    socket.emit("room:join", { roomCode, displayName, deckId }, (result) => {
+    socket.emit("room:join", { roomCode, displayName, deckId, asSpectator }, (result) => {
       if (!result.ok) {
         setError(result.error);
         return;
@@ -97,7 +102,7 @@ export default function GameTable() {
   }, []);
 
   const connectedSeats = (gameState?.players ?? []).filter((p) => p.connected).map((p) => p.seat);
-  const { localStream, remoteStreams } = useWebRTCMesh(socket, mySeat, connectedSeats, true);
+  const { localStream, remoteStreams } = useWebRTCMesh(socket, mySeat, connectedSeats, !asSpectator);
 
   function moveObject(instanceId: string, toZone: ZoneId, x?: number, y?: number) {
     socket.emit("game:moveObject", { instanceId, toZone, x, y });
@@ -178,21 +183,49 @@ export default function GameTable() {
     <div className="page">
       <h1>Room {gameState.roomCode}</h1>
 
+      {asSpectator && (
+        <div
+          style={{
+            border: "1px solid #8ab4f8",
+            borderRadius: "6px",
+            padding: "0.5rem 0.75rem",
+            marginBottom: "1rem",
+            fontSize: "0.9rem",
+          }}
+        >
+          You're watching this game. Hands and libraries stay hidden from spectators, and you can't touch the board —
+          but you can chat.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap" }}>
         <span>
           Turn: seat {gameState.turnSeat} · Phase:{" "}
-          <select value={gameState.phase} onChange={(e) => setPhase(e.target.value as TurnPhase)}>
-            {PHASES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+          {asSpectator ? (
+            <strong>{gameState.phase}</strong>
+          ) : (
+            <select value={gameState.phase} onChange={(e) => setPhase(e.target.value as TurnPhase)}>
+              {PHASES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          )}
         </span>
-        <button onClick={passTurn}>Pass turn</button>
-        <button onClick={drawCard}>Draw a card</button>
-        <button onClick={shuffle}>Shuffle library</button>
-        <button onClick={searchLibrary}>Search library</button>
+        {!asSpectator && (
+          <>
+            <button onClick={passTurn}>Pass turn</button>
+            <button onClick={drawCard}>Draw a card</button>
+            <button onClick={shuffle}>Shuffle library</button>
+            <button onClick={searchLibrary}>Search library</button>
+          </>
+        )}
+        {gameState.spectators.length > 0 && (
+          <span style={{ opacity: 0.75, fontSize: "0.85rem" }}>
+            Watching: {gameState.spectators.map((s) => s.displayName).join(", ")}
+          </span>
+        )}
       </div>
 
       {librarySearch && (
@@ -219,7 +252,7 @@ export default function GameTable() {
       )}
 
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-        <VideoTile stream={localStream} label={`You (${displayName})`} muted />
+        {!asSpectator && <VideoTile stream={localStream} label={`You (${displayName})`} muted />}
         {Object.entries(remoteStreams).map(([seat, stream]) => {
           const p = gameState.players.find((pl) => pl.seat === Number(seat));
           return <VideoTile key={seat} stream={stream} label={p?.displayName ?? `Seat ${seat}`} />;
@@ -262,7 +295,11 @@ export default function GameTable() {
         <div style={{ flex: 1, maxHeight: "200px", overflowY: "auto", border: "1px solid #2a2d36", padding: "0.5rem" }}>
           {chat.map((c, i) => (
             <div key={i} style={{ fontSize: "0.85rem" }}>
-              <strong>Seat {c.seat}:</strong> {c.message}
+              <strong>
+                {c.displayName}
+                {c.isSpectator && " (watching)"}:
+              </strong>{" "}
+              {c.message}
             </div>
           ))}
         </div>

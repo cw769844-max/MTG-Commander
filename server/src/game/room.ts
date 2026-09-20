@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { GameLogEntry, GameObject, GameState, PlayerState, TurnPhase, ZoneId } from "@mtg-commander/shared";
+import type {
+  GameLogEntry,
+  GameObject,
+  GameState,
+  PlayerState,
+  SpectatorInfo,
+  TurnPhase,
+  ZoneId,
+} from "@mtg-commander/shared";
 import { MAX_PLAYERS_PER_ROOM } from "@mtg-commander/shared";
 import { prisma } from "../db";
 
@@ -19,6 +27,7 @@ export class Room {
     this.state = {
       roomCode,
       players: [],
+      spectators: [],
       objects: [],
       log: [],
       turnSeat: 0,
@@ -99,13 +108,34 @@ export class Room {
     this.state.objects.push(...commanderCards, ...shuffle(libraryCards));
   }
 
+  addSpectator(userId: string, displayName: string): SpectatorInfo {
+    const existing = this.state.spectators.find((s) => s.userId === userId);
+    if (existing) return existing;
+
+    const spectator: SpectatorInfo = { userId, displayName };
+    this.state.spectators.push(spectator);
+    this.addLog(`${displayName} is now watching.`);
+    return spectator;
+  }
+
+  removeSpectator(userId: string) {
+    const index = this.state.spectators.findIndex((s) => s.userId === userId);
+    if (index === -1) return;
+    const [removed] = this.state.spectators.splice(index, 1);
+    this.addLog(`${removed.displayName} stopped watching.`);
+  }
+
   leave(userId: string) {
     const player = this.state.players.find((p) => p.userId === userId);
-    if (!player) return;
+    if (!player) {
+      this.removeSpectator(userId);
+      return;
+    }
     player.connected = false;
     this.addLog(`${player.displayName} disconnected.`, player.seat);
   }
 
+  /** A room with nobody playing is over, even if someone is still watching. */
   isEmpty(): boolean {
     return this.state.players.every((p) => !p.connected);
   }

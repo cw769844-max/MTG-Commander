@@ -53,6 +53,9 @@ export default function CardMenu({
   onTarget,
   onGiveControl,
 }: Props) {
+  // Spectators have no seat, and pointing at cards is a player's action.
+  if (mySeat === null) return null;
+
   const otherPlayers = players.filter((p) => p.seat !== mySeat);
 
   return (

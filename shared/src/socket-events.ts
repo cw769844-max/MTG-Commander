@@ -4,8 +4,10 @@ import type { MatchFound, PodSize, QueueStatus } from "./matchmaking";
 /** Client -> server events. */
 export interface ClientToServerEvents {
   "room:join": (
-    payload: { roomCode: string; displayName: string; deckId: string | null },
-    ack: (result: { ok: true; state: ClientGameState; seat: number } | { ok: false; error: string }) => void
+    payload: { roomCode: string; displayName: string; deckId: string | null; asSpectator?: boolean },
+    ack: (
+      result: { ok: true; state: ClientGameState; seat: number | null } | { ok: false; error: string }
+    ) => void
   ) => void;
   "room:leave": () => void;
 
@@ -56,7 +58,13 @@ export interface ServerToClientEvents {
   "room:playerLeft": (payload: { seat: number }) => void;
   "game:log": (entry: GameLogEntry) => void;
   "game:targeted": (payload: { instanceId: string; kind: TargetKind; bySeat: number }) => void;
-  "chat:message": (payload: { seat: number; message: string; timestamp: string }) => void;
+  "chat:message": (payload: {
+    seat: number | null;
+    displayName: string;
+    isSpectator: boolean;
+    message: string;
+    timestamp: string;
+  }) => void;
   "rtc:signal": (payload: { fromSeat: number; data: unknown }) => void;
   "error": (payload: { message: string }) => void;
 
