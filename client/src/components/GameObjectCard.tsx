@@ -1,56 +1,66 @@
-import type { Card, GameObject, ZoneId } from "@mtg-commander/shared";
+import { useState } from "react";
+import type { Card, GameObject, PlayerState, TargetKind } from "@mtg-commander/shared";
+import CardMenu, { type CardActions } from "./CardMenu";
 
-const ZONES: ZoneId[] = ["library", "hand", "battlefield", "graveyard", "exile", "command"];
-
-interface Props {
+interface Props extends CardActions {
   obj: GameObject;
   card: Card | undefined;
-  onMove: (zone: ZoneId) => void;
-  onToggleTap: () => void;
+  /** True when the viewer controls this card and may manipulate it. */
+  canManipulate: boolean;
+  players: PlayerState[];
+  mySeat: number | null;
+  /** Set while this card is being declared or targeted by someone. */
+  highlight: TargetKind | null;
 }
 
-export default function GameObjectCard({ obj, card, onMove, onToggleTap }: Props) {
+export default function GameObjectCard({ obj, card, canManipulate, players, mySeat, highlight, ...actions }: Props) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   // The server sends no oracle id for cards we aren't entitled to see, so
   // there is nothing to render a face from.
   const hidden = obj.cardOracleId === null;
+
   return (
     <div
-      className="card-tile"
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", obj.instanceId);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      style={{
-        width: "100px",
-        transform: obj.tapped ? "rotate(90deg)" : undefined,
-        transition: "transform 0.15s",
-        cursor: "grab",
-      }}
+      style={{ position: "relative", width: "100px" }}
+      onMouseEnter={() => setMenuOpen(true)}
+      onMouseLeave={() => setMenuOpen(false)}
     >
-      {hidden || !card ? (
-        <div
-          style={{ height: "70px", background: "#3a3d4a", borderRadius: "4px" }}
-          title={hidden ? "Hidden from you" : "Loading card"}
-        />
-      ) : (
-        <img src={card.imageNormal ?? undefined} alt={card.name} />
-      )}
-      <div style={{ fontSize: "0.7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {hidden ? "Hidden" : card?.name ?? "..."}
+      <div
+        className={`card-tile${highlight ? ` highlight-${highlight}` : ""}`}
+        draggable={canManipulate}
+        onDragStart={(e) => {
+          if (!canManipulate) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.setData("text/plain", obj.instanceId);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        style={{
+          width: "100px",
+          transform: obj.tapped ? "rotate(90deg)" : undefined,
+          transition: "transform 0.15s",
+          cursor: canManipulate ? "grab" : "default",
+          opacity: canManipulate ? 1 : 0.92,
+        }}
+      >
+        {hidden || obj.faceDown || !card ? (
+          <div
+            style={{ height: "70px", background: "#3a3d4a", borderRadius: "4px" }}
+            title={obj.faceDown ? "Face down" : hidden ? "Hidden from you" : "Loading card"}
+          />
+        ) : (
+          <img src={card.imageNormal ?? undefined} alt={card.name} />
+        )}
+        <div style={{ fontSize: "0.7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {obj.faceDown ? "Face down" : hidden ? "Hidden" : card?.name ?? "..."}
+        </div>
       </div>
-      {obj.zone === "battlefield" && (
-        <button onClick={onToggleTap} style={{ fontSize: "0.65rem" }}>
-          {obj.tapped ? "Untap" : "Tap"}
-        </button>
+
+      {menuOpen && (
+        <CardMenu obj={obj} canManipulate={canManipulate} players={players} mySeat={mySeat} {...actions} />
       )}
-      <select value={obj.zone} onChange={(e) => onMove(e.target.value as ZoneId)} style={{ fontSize: "0.65rem", width: "100%" }}>
-        {ZONES.map((z) => (
-          <option key={z} value={z}>
-            {z}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }

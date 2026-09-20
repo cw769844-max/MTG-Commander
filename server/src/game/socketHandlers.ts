@@ -2,6 +2,7 @@ import { parse as parseCookie } from "cookie";
 import type { Server, Socket } from "socket.io";
 import {
   POD_SIZES,
+  PUBLIC_ZONES,
   evaluateBracket,
   type ClientToServerEvents,
   type PodSize,
@@ -83,6 +84,7 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:moveObject", ({ instanceId, toZone, x, y }) => {
       withRoom(socket, (room) => {
+        if (!controls(room, data.seat, instanceId)) return;
         room.moveObject(instanceId, toZone, x, y);
         broadcastState(io, room);
       });
@@ -90,9 +92,57 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:tapObject", ({ instanceId, tapped }) => {
       withRoom(socket, (room) => {
+        if (!controls(room, data.seat, instanceId)) return;
         room.tapObject(instanceId, tapped);
         broadcastState(io, room);
       });
+    });
+
+    socket.on("game:flipObject", ({ instanceId, faceDown }) => {
+      withRoom(socket, (room) => {
+        if (!controls(room, data.seat, instanceId)) return;
+        room.flipObject(instanceId, faceDown);
+        broadcastState(io, room);
+      });
+    });
+
+    socket.on("game:setController", ({ instanceId, toSeat }) => {
+      withRoom(socket, (room) => {
+        if (!controls(room, data.seat, instanceId)) return;
+        if (!room.state.players.some((p) => p.seat === toSeat)) return;
+        room.setController(instanceId, toSeat);
+        const target = room.state.players.find((p) => p.seat === toSeat);
+        const entry = room.log(
+          `${data.displayName} passed control of a permanent to ${target?.displayName}.`,
+          data.seat ?? null
+        );
+        io.to(room.state.roomCode).emit("game:log", entry);
+        broadcastState(io, room);
+      });
+    });
+
+    socket.on("game:targetObject", async ({ instanceId, kind }) => {
+      if (!data.roomCode || data.seat === undefined) return;
+      const room = roomManager.get(data.roomCode);
+      const obj = room?.getObject(instanceId);
+      if (!room || !obj) return;
+
+      // You can point at anything public, or at your own cards. Pointing at a
+      // card you can't see would be a way to probe hidden zones.
+      const isPublic = PUBLIC_ZONES.includes(obj.zone);
+      const isMine = obj.controllerSeat === data.seat || obj.ownerSeat === data.seat;
+      if (!isPublic && !isMine) return;
+      if (kind === "declare" && !isMine) return;
+
+      io.to(room.state.roomCode).emit("game:targeted", { instanceId, kind, bySeat: data.seat });
+
+      // Naming the card is only safe for public zones; declaring from hand is
+      // a deliberate reveal, so it names the card too.
+      const name = await cardName(obj.cardOracleId);
+      const label = isPublic || kind === "declare" ? name : "a hidden card";
+      const verb = kind === "declare" ? "declares" : "targets";
+      const entry = room.log(`${data.displayName} ${verb} ${label}.`, data.seat);
+      io.to(room.state.roomCode).emit("game:log", entry);
     });
 
     socket.on("game:drawCard", ({ count }) => {
@@ -115,6 +165,7 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:setLife", ({ seat, life }) => {
       withRoom(socket, (room) => {
+        if (seat !== data.seat) return; // you track your own life total
         room.setLife(seat, life);
         broadcastState(io, room);
       });
@@ -122,6 +173,7 @@ export function registerGameHandlers(io: IOServer) {
 
     socket.on("game:setCommanderDamage", ({ fromSeat, toSeat, amount }) => {
       withRoom(socket, (room) => {
+        if (fromSeat !== data.seat) return; // you record only the damage your commander dealt
         room.setCommanderDamage(fromSeat, toSeat, amount);
         broadcastState(io, room);
       });
@@ -265,6 +317,22 @@ function broadcastQueueStatus(io: IOServer, bracket: QueueEntry["bracket"], podS
   for (const entry of matchmakingQueue.waitingIn(bracket, podSize)) {
     io.to(entry.socketId).emit("matchmaking:status", status);
   }
+}
+
+/**
+ * Only the player controlling a card may move, tap or flip it. To affect
+ * someone else's card you target it and they resolve it, the same way you'd
+ * point across a table rather than reaching over and picking it up.
+ */
+function controls(room: Room, seat: number | undefined, instanceId: string): boolean {
+  if (seat === undefined) return false;
+  return room.getObject(instanceId)?.controllerSeat === seat;
+}
+
+async function cardName(oracleId: string | null): Promise<string> {
+  if (!oracleId) return "a card";
+  const row = await prisma.card.findUnique({ where: { oracleId }, select: { name: true } });
+  return row?.name ?? "a card";
 }
 
 /**

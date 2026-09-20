@@ -6,6 +6,16 @@ export type ZoneId =
   | "exile"
   | "command";
 
+/** Zones whose contents every player can see. */
+export const PUBLIC_ZONES: ZoneId[] = ["battlefield", "graveyard", "exile", "command"];
+
+/**
+ * Pointing at a card so the table knows what you mean. "declare" announces a
+ * card you control (I'm casting/activating this); "target" points at any card
+ * in a public zone (this is what my spell is hitting).
+ */
+export type TargetKind = "declare" | "target";
+
 export interface GameObject {
   /** Unique per game instance (not the same as oracleId, since a card can move/transform). */
   instanceId: string;

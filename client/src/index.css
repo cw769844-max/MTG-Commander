@@ -39,6 +39,38 @@ a {
   border-radius: 4px;
 }
 
+/* Declaring and targeting flash the card on every player's screen, so the
+   whole table can see which card someone means. */
+@keyframes declare-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(253, 214, 99, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(253, 214, 99, 0);
+  }
+}
+
+@keyframes target-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(242, 139, 130, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(242, 139, 130, 0);
+  }
+}
+
+.highlight-declare {
+  outline: 2px solid #fdd663;
+  border-radius: 6px;
+  animation: declare-pulse 0.7s ease-out 3;
+}
+
+.highlight-target {
+  outline: 2px solid #f28b82;
+  border-radius: 6px;
+  animation: target-pulse 0.7s ease-out 3;
+}
+
 .issue-error {
   color: #f28b82;
 }

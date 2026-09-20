@@ -1,4 +1,4 @@
-import type { Card, GameObject, PlayerState, ZoneId } from "@mtg-commander/shared";
+import type { Card, GameObject, PlayerState, TargetKind, ZoneId } from "@mtg-commander/shared";
 import BattlefieldZone from "./BattlefieldZone";
 import GameObjectCard from "./GameObjectCard";
 import ZoneDropArea from "./ZoneDropArea";
@@ -9,8 +9,13 @@ interface Props {
   mySeat: number | null;
   getCard: (oracleId: string | null) => Card | undefined;
   ensureCard: (oracleId: string | null) => void;
+  players: PlayerState[];
   onMove: (instanceId: string, zone: ZoneId, x?: number, y?: number) => void;
   onToggleTap: (instanceId: string, tapped: boolean) => void;
+  onFlip: (instanceId: string, faceDown: boolean) => void;
+  onTarget: (instanceId: string, kind: TargetKind) => void;
+  onGiveControl: (instanceId: string, seat: number) => void;
+  highlightOf: (instanceId: string) => TargetKind | null;
   librarySize: number;
   onSetLife: (life: number) => void;
   onSetCommanderDamageFromMe: (amount: number) => void;
@@ -25,8 +30,13 @@ export default function PlayerBoard({
   getCard,
   ensureCard,
   librarySize,
+  players,
   onMove,
   onToggleTap,
+  onFlip,
+  onTarget,
+  onGiveControl,
+  highlightOf,
   onSetLife,
   onSetCommanderDamageFromMe,
 }: Props) {
@@ -81,6 +91,13 @@ export default function PlayerBoard({
                   card={getCard(obj.cardOracleId)}
                   onMove={(zone) => onMove(obj.instanceId, zone)}
                   onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+                  canManipulate={obj.controllerSeat === mySeat}
+                  players={players}
+                  mySeat={mySeat}
+                  highlight={highlightOf(obj.instanceId)}
+                  onFlip={(faceDown) => onFlip(obj.instanceId, faceDown)}
+                  onTarget={(kind) => onTarget(obj.instanceId, kind)}
+                  onGiveControl={(seat) => onGiveControl(obj.instanceId, seat)}
                 />
               ))}
             </div>
@@ -95,6 +112,12 @@ export default function PlayerBoard({
         onDropAt={(instanceId, x, y) => onMove(instanceId, "battlefield", x, y)}
         onMoveZone={(instanceId, zone) => onMove(instanceId, zone)}
         onToggleTap={onToggleTap}
+        onFlip={onFlip}
+        onTarget={onTarget}
+        onGiveControl={onGiveControl}
+        highlightOf={highlightOf}
+        players={players}
+        mySeat={mySeat}
       />
 
       {STACK_ZONES.map((zone) => {
@@ -112,6 +135,13 @@ export default function PlayerBoard({
                     card={getCard(obj.cardOracleId)}
                     onMove={(z) => onMove(obj.instanceId, z)}
                     onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+                    canManipulate={obj.controllerSeat === mySeat}
+                    players={players}
+                    mySeat={mySeat}
+                    highlight={highlightOf(obj.instanceId)}
+                    onFlip={(faceDown) => onFlip(obj.instanceId, faceDown)}
+                    onTarget={(kind) => onTarget(obj.instanceId, kind)}
+                    onGiveControl={(seat) => onGiveControl(obj.instanceId, seat)}
                   />
                 ))}
               </div>

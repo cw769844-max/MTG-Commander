@@ -1,4 +1,4 @@
-import type { ClientGameState, GameLogEntry, GameObject, TurnPhase, ZoneId } from "./game";
+import type { ClientGameState, GameLogEntry, GameObject, TargetKind, TurnPhase, ZoneId } from "./game";
 import type { MatchFound, PodSize, QueueStatus } from "./matchmaking";
 
 /** Client -> server events. */
@@ -20,6 +20,11 @@ export interface ClientToServerEvents {
 
   "game:moveObject": (payload: { instanceId: string; toZone: ZoneId; x?: number; y?: number }) => void;
   "game:tapObject": (payload: { instanceId: string; tapped: boolean }) => void;
+  "game:flipObject": (payload: { instanceId: string; faceDown: boolean }) => void;
+  /** Hands a permanent you control to another player, for control-change effects. */
+  "game:setController": (payload: { instanceId: string; toSeat: number }) => void;
+  /** Points at a card so everyone can see what you're referring to. */
+  "game:targetObject": (payload: { instanceId: string; kind: TargetKind }) => void;
   "game:drawCard": (payload: { count: number }) => void;
   "game:shuffleLibrary": () => void;
   "game:setLife": (payload: { seat: number; life: number }) => void;
@@ -50,6 +55,7 @@ export interface ServerToClientEvents {
   "room:playerJoined": (payload: { seat: number; displayName: string }) => void;
   "room:playerLeft": (payload: { seat: number }) => void;
   "game:log": (entry: GameLogEntry) => void;
+  "game:targeted": (payload: { instanceId: string; kind: TargetKind; bySeat: number }) => void;
   "chat:message": (payload: { seat: number; message: string; timestamp: string }) => void;
   "rtc:signal": (payload: { fromSeat: number; data: unknown }) => void;
   "error": (payload: { message: string }) => void;

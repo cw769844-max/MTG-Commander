@@ -110,18 +110,38 @@ export class Room {
     return this.state.players.every((p) => !p.connected);
   }
 
+  getObject(instanceId: string): GameObject | undefined {
+    return this.state.objects.find((o) => o.instanceId === instanceId);
+  }
+
   moveObject(instanceId: string, toZone: ZoneId, x?: number, y?: number) {
-    const obj = this.state.objects.find((o) => o.instanceId === instanceId);
+    const obj = this.getObject(instanceId);
     if (!obj) return;
     obj.zone = toZone;
     if (x !== undefined) obj.x = x;
     if (y !== undefined) obj.y = y;
-    if (toZone !== "battlefield") obj.tapped = false;
+    if (toZone !== "battlefield") {
+      obj.tapped = false;
+      obj.faceDown = false;
+      // Control effects end when a permanent leaves the battlefield, and the
+      // card returns to its owner's zones.
+      obj.controllerSeat = obj.ownerSeat;
+    }
   }
 
   tapObject(instanceId: string, tapped: boolean) {
-    const obj = this.state.objects.find((o) => o.instanceId === instanceId);
+    const obj = this.getObject(instanceId);
     if (obj) obj.tapped = tapped;
+  }
+
+  flipObject(instanceId: string, faceDown: boolean) {
+    const obj = this.getObject(instanceId);
+    if (obj) obj.faceDown = faceDown;
+  }
+
+  setController(instanceId: string, toSeat: number) {
+    const obj = this.getObject(instanceId);
+    if (obj) obj.controllerSeat = toSeat;
   }
 
   drawCards(seat: number, count: number) {

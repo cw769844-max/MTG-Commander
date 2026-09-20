@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
-import type { ClientGameState, GameLogEntry, GameObject, TurnPhase, ZoneId } from "@mtg-commander/shared";
+import type { ClientGameState, GameLogEntry, GameObject, TargetKind, TurnPhase, ZoneId } from "@mtg-commander/shared";
 import { socket } from "../socket";
 import { useAuth } from "../context/AuthContext";
 import { useCardCache } from "../hooks/useCardCache";
@@ -38,6 +38,8 @@ export default function GameTable() {
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [librarySearch, setLibrarySearch] = useState<GameObject[] | null>(null);
+  // instanceId -> the kind of pulse currently playing on that card.
+  const [highlights, setHighlights] = useState<Record<string, TargetKind>>({});
   const { get: getCard, ensure: ensureCard } = useCardCache();
 
   useEffect(() => {
@@ -54,11 +56,23 @@ export default function GameTable() {
     const handleChat = (msg: { seat: number; message: string; timestamp: string }) =>
       setChat((prev) => [...prev, msg]);
     const handleError = (e: { message: string }) => setError(e.message);
+    const handleTargeted = ({ instanceId, kind }: { instanceId: string; kind: TargetKind }) => {
+      setHighlights((prev) => ({ ...prev, [instanceId]: kind }));
+      // Long enough for the three pulses to finish before the ring clears.
+      window.setTimeout(() => {
+        setHighlights((prev) => {
+          const next = { ...prev };
+          delete next[instanceId];
+          return next;
+        });
+      }, 2200);
+    };
 
     socket.on("room:state", handleState);
     socket.on("game:log", handleLog);
     socket.on("chat:message", handleChat);
     socket.on("error", handleError);
+    socket.on("game:targeted", handleTargeted);
 
     socket.connect();
     socket.emit("room:join", { roomCode, displayName, deckId }, (result) => {
@@ -76,6 +90,7 @@ export default function GameTable() {
       socket.off("game:log", handleLog);
       socket.off("chat:message", handleChat);
       socket.off("error", handleError);
+      socket.off("game:targeted", handleTargeted);
       socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,6 +105,18 @@ export default function GameTable() {
 
   function toggleTap(instanceId: string, tapped: boolean) {
     socket.emit("game:tapObject", { instanceId, tapped });
+  }
+
+  function flipObject(instanceId: string, faceDown: boolean) {
+    socket.emit("game:flipObject", { instanceId, faceDown });
+  }
+
+  function targetObject(instanceId: string, kind: TargetKind) {
+    socket.emit("game:targetObject", { instanceId, kind });
+  }
+
+  function giveControl(instanceId: string, seat: number) {
+    socket.emit("game:setController", { instanceId, toSeat: seat });
   }
 
   function drawCard() {
@@ -208,8 +235,13 @@ export default function GameTable() {
           getCard={getCard}
           ensureCard={ensureCard}
           librarySize={gameState.librarySizes[player.seat] ?? 0}
+          players={gameState.players}
           onMove={moveObject}
           onToggleTap={toggleTap}
+          onFlip={flipObject}
+          onTarget={targetObject}
+          onGiveControl={giveControl}
+          highlightOf={(instanceId) => highlights[instanceId] ?? null}
           onSetLife={(life) => socket.emit("game:setLife", { seat: player.seat, life })}
           onSetCommanderDamageFromMe={(amount) => {
             if (mySeat === null) return;

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { Card, GameObject, ZoneId } from "@mtg-commander/shared";
+import type { Card, GameObject, PlayerState, TargetKind, ZoneId } from "@mtg-commander/shared";
 import GameObjectCard from "./GameObjectCard";
 
 const CARD_WIDTH = 100;
@@ -11,6 +11,12 @@ interface Props {
   onDropAt: (instanceId: string, x: number, y: number) => void;
   onMoveZone: (instanceId: string, zone: ZoneId) => void;
   onToggleTap: (instanceId: string, tapped: boolean) => void;
+  onFlip: (instanceId: string, faceDown: boolean) => void;
+  onTarget: (instanceId: string, kind: TargetKind) => void;
+  onGiveControl: (instanceId: string, seat: number) => void;
+  highlightOf: (instanceId: string) => TargetKind | null;
+  players: PlayerState[];
+  mySeat: number | null;
 }
 
 /**
@@ -18,7 +24,19 @@ interface Props {
  * (persisted on the GameObject itself) so a board can be laid out like a
  * real table instead of a card list.
  */
-export default function BattlefieldZone({ objects, getCard, onDropAt, onMoveZone, onToggleTap }: Props) {
+export default function BattlefieldZone({
+  objects,
+  getCard,
+  onDropAt,
+  onMoveZone,
+  onToggleTap,
+  onFlip,
+  onTarget,
+  onGiveControl,
+  highlightOf,
+  players,
+  mySeat,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isOver, setIsOver] = useState(false);
 
@@ -62,6 +80,13 @@ export default function BattlefieldZone({ objects, getCard, onDropAt, onMoveZone
             card={getCard(obj.cardOracleId)}
             onMove={(zone) => onMoveZone(obj.instanceId, zone)}
             onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
+            canManipulate={obj.controllerSeat === mySeat}
+            players={players}
+            mySeat={mySeat}
+            highlight={highlightOf(obj.instanceId)}
+            onFlip={(faceDown) => onFlip(obj.instanceId, faceDown)}
+            onTarget={(kind) => onTarget(obj.instanceId, kind)}
+            onGiveControl={(seat) => onGiveControl(obj.instanceId, seat)}
           />
         </div>
       ))}
