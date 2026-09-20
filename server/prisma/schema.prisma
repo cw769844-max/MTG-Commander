@@ -33,6 +33,19 @@ model Card {
   @@index([name])
 }
 
+/// One row tracking the state of the Scryfall card sync, so freshness is
+/// inspectable and a bulk file that hasn't changed isn't downloaded again.
+model CardSyncState {
+  id             String   @id @default("singleton")
+  /// updated_at of the Scryfall bulk file we last ingested.
+  bulkUpdatedAt  DateTime?
+  lastSyncedAt   DateTime?
+  lastCheckedAt  DateTime?
+  cardCount      Int      @default(0)
+  lastStatus     String   @default("never-run")
+  lastError      String?
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique

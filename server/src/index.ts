@@ -9,6 +9,7 @@ import { errorHandler } from "./async-handler";
 import { requireAuth } from "./auth";
 import { registerGameHandlers } from "./game/socketHandlers";
 import { authRouter } from "./routes/auth";
+import { startCardSyncScheduler } from "./scryfall/scheduler";
 import { cardsRouter } from "./routes/cards";
 import { decksRouter } from "./routes/decks";
 
@@ -36,4 +37,5 @@ registerGameHandlers(io);
 
 httpServer.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
+  startCardSyncScheduler();
 });
