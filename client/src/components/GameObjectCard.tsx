@@ -5,13 +5,14 @@ const ZONES: ZoneId[] = ["library", "hand", "battlefield", "graveyard", "exile",
 interface Props {
   obj: GameObject;
   card: Card | undefined;
-  /** Hide the face for cards an opponent hasn't revealed (their hand/library). */
-  hidden: boolean;
   onMove: (zone: ZoneId) => void;
   onToggleTap: () => void;
 }
 
-export default function GameObjectCard({ obj, card, hidden, onMove, onToggleTap }: Props) {
+export default function GameObjectCard({ obj, card, onMove, onToggleTap }: Props) {
+  // The server sends no oracle id for cards we aren't entitled to see, so
+  // there is nothing to render a face from.
+  const hidden = obj.cardOracleId === null;
   return (
     <div
       className="card-tile"
@@ -28,12 +29,15 @@ export default function GameObjectCard({ obj, card, hidden, onMove, onToggleTap 
       }}
     >
       {hidden || !card ? (
-        <div style={{ height: "70px", background: "#3a3d4a", borderRadius: "4px" }} title="Face down" />
+        <div
+          style={{ height: "70px", background: "#3a3d4a", borderRadius: "4px" }}
+          title={hidden ? "Hidden from you" : "Loading card"}
+        />
       ) : (
         <img src={card.imageNormal ?? undefined} alt={card.name} />
       )}
       <div style={{ fontSize: "0.7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {hidden ? "Hidden" : card?.name ?? obj.cardOracleId}
+        {hidden ? "Hidden" : card?.name ?? "..."}
       </div>
       {obj.zone === "battlefield" && (
         <button onClick={onToggleTap} style={{ fontSize: "0.65rem" }}>

@@ -131,6 +131,14 @@ export class Room {
     }
   }
 
+  /**
+   * The owner's own library, shuffled before it leaves the server so that
+   * looking through it doesn't also reveal the order cards will be drawn in.
+   */
+  librarySnapshot(seat: number): GameObject[] {
+    return shuffle(this.state.objects.filter((o) => o.ownerSeat === seat && o.zone === "library"));
+  }
+
   shuffleLibrary(seat: number) {
     const libraryObjs = this.state.objects.filter((o) => o.ownerSeat === seat && o.zone === "library");
     const shuffled = shuffle(libraryObjs);

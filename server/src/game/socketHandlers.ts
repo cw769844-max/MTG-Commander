@@ -13,7 +13,8 @@ import { validateDeckLegality } from "../deck-legality";
 import { fromPrismaCard } from "../scryfall/mapper";
 import { selfReportOf } from "../routes/decks";
 import { matchmakingQueue, type QueueEntry } from "./matchmaking";
-import { roomManager } from "./room";
+import { roomManager, type Room } from "./room";
+import { redactStateFor } from "./visibility";
 
 type IOServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type IOSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -63,9 +64,9 @@ export function registerGameHandlers(io: IOServer) {
       if (!seatSockets.has(room.state.roomCode)) seatSockets.set(room.state.roomCode, new Map());
       seatSockets.get(room.state.roomCode)!.set(result.seat, socket.id);
 
-      ack({ ok: true, state: room.state, seat: result.seat });
+      ack({ ok: true, state: redactStateFor(room.state, result.seat), seat: result.seat });
       socket.to(room.state.roomCode).emit("room:playerJoined", { seat: result.seat, displayName });
-      io.to(room.state.roomCode).emit("room:state", room.state);
+      broadcastState(io, room);
     });
 
     socket.on("room:leave", () => {
@@ -83,14 +84,14 @@ export function registerGameHandlers(io: IOServer) {
     socket.on("game:moveObject", ({ instanceId, toZone, x, y }) => {
       withRoom(socket, (room) => {
         room.moveObject(instanceId, toZone, x, y);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
     socket.on("game:tapObject", ({ instanceId, tapped }) => {
       withRoom(socket, (room) => {
         room.tapObject(instanceId, tapped);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
@@ -98,7 +99,7 @@ export function registerGameHandlers(io: IOServer) {
       withRoom(socket, (room) => {
         if (data.seat === undefined) return;
         room.drawCards(data.seat, count);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
@@ -108,35 +109,35 @@ export function registerGameHandlers(io: IOServer) {
         room.shuffleLibrary(data.seat);
         const entry = room.log(`${data.displayName} shuffled their library.`, data.seat);
         io.to(room.state.roomCode).emit("game:log", entry);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
     socket.on("game:setLife", ({ seat, life }) => {
       withRoom(socket, (room) => {
         room.setLife(seat, life);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
     socket.on("game:setCommanderDamage", ({ fromSeat, toSeat, amount }) => {
       withRoom(socket, (room) => {
         room.setCommanderDamage(fromSeat, toSeat, amount);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
     socket.on("game:setPhase", ({ phase }) => {
       withRoom(socket, (room) => {
         room.setPhase(phase);
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
     socket.on("game:passTurn", () => {
       withRoom(socket, (room) => {
         room.passTurn();
-        io.to(room.state.roomCode).emit("room:state", room.state);
+        broadcastState(io, room);
       });
     });
 
@@ -145,6 +146,23 @@ export function registerGameHandlers(io: IOServer) {
         const entry = room.log(message, data.seat ?? null);
         io.to(room.state.roomCode).emit("game:log", entry);
       });
+    });
+
+    socket.on("game:searchLibrary", (ack) => {
+      if (!data.roomCode || data.seat === undefined) {
+        ack({ ok: false, error: "You aren't seated in a game." });
+        return;
+      }
+      const room = roomManager.get(data.roomCode);
+      if (!room) {
+        ack({ ok: false, error: "Game not found." });
+        return;
+      }
+
+      // Only ever your own library, and searching is public knowledge.
+      ack({ ok: true, cards: room.librarySnapshot(data.seat) });
+      const entry = room.log(`${data.displayName} searched their library.`, data.seat);
+      io.to(room.state.roomCode).emit("game:log", entry);
     });
 
     socket.on("chat:message", ({ message }) => {
@@ -249,6 +267,18 @@ function broadcastQueueStatus(io: IOServer, bracket: QueueEntry["bracket"], podS
   }
 }
 
+/**
+ * State goes out one socket at a time: each seat gets its own redacted view,
+ * so no client ever holds cards it isn't entitled to see.
+ */
+function broadcastState(io: IOServer, room: Room) {
+  const sockets = seatSockets.get(room.state.roomCode);
+  if (!sockets) return;
+  for (const [seat, socketId] of sockets) {
+    io.to(socketId).emit("room:state", redactStateFor(room.state, seat));
+  }
+}
+
 function withRoom(socket: IOSocket, fn: (room: ReturnType<typeof roomManager.getOrCreate>) => void) {
   const data = socket.data as SocketData;
   if (!data.roomCode) return;
@@ -266,7 +296,7 @@ function handleLeave(socket: IOSocket, io: IOServer) {
   socket.leave(data.roomCode);
   seatSockets.get(data.roomCode)?.delete(data.seat ?? -1);
   io.to(data.roomCode).emit("room:playerLeft", { seat: data.seat ?? -1 });
-  io.to(data.roomCode).emit("room:state", room.state);
+  broadcastState(io, room);
   roomManager.cleanupIfEmpty(data.roomCode);
   if (roomManager.get(data.roomCode) === undefined) seatSockets.delete(data.roomCode);
 }

@@ -1,13 +1,22 @@
-import type { GameLogEntry, GameState, TurnPhase, ZoneId } from "./game";
+import type { ClientGameState, GameLogEntry, GameObject, TurnPhase, ZoneId } from "./game";
 import type { MatchFound, PodSize, QueueStatus } from "./matchmaking";
 
 /** Client -> server events. */
 export interface ClientToServerEvents {
   "room:join": (
     payload: { roomCode: string; displayName: string; deckId: string | null },
-    ack: (result: { ok: true; state: GameState; seat: number } | { ok: false; error: string }) => void
+    ack: (result: { ok: true; state: ClientGameState; seat: number } | { ok: false; error: string }) => void
   ) => void;
   "room:leave": () => void;
+
+  /**
+   * Tutoring: the owner asks to look through their own library. The cards come
+   * back shuffled so looking doesn't reveal the draw order, and everyone is
+   * told that a search happened.
+   */
+  "game:searchLibrary": (
+    ack: (result: { ok: true; cards: GameObject[] } | { ok: false; error: string }) => void
+  ) => void;
 
   "game:moveObject": (payload: { instanceId: string; toZone: ZoneId; x?: number; y?: number }) => void;
   "game:tapObject": (payload: { instanceId: string; tapped: boolean }) => void;
@@ -37,7 +46,7 @@ export interface ClientToServerEvents {
 
 /** Server -> client events. */
 export interface ServerToClientEvents {
-  "room:state": (state: GameState) => void;
+  "room:state": (state: ClientGameState) => void;
   "room:playerJoined": (payload: { seat: number; displayName: string }) => void;
   "room:playerLeft": (payload: { seat: number }) => void;
   "game:log": (entry: GameLogEntry) => void;

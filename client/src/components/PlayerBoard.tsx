@@ -7,10 +7,11 @@ interface Props {
   player: PlayerState;
   objects: GameObject[];
   mySeat: number | null;
-  getCard: (oracleId: string) => Card | undefined;
-  ensureCard: (oracleId: string) => void;
+  getCard: (oracleId: string | null) => Card | undefined;
+  ensureCard: (oracleId: string | null) => void;
   onMove: (instanceId: string, zone: ZoneId, x?: number, y?: number) => void;
   onToggleTap: (instanceId: string, tapped: boolean) => void;
+  librarySize: number;
   onSetLife: (life: number) => void;
   onSetCommanderDamageFromMe: (amount: number) => void;
 }
@@ -23,6 +24,7 @@ export default function PlayerBoard({
   mySeat,
   getCard,
   ensureCard,
+  librarySize,
   onMove,
   onToggleTap,
   onSetLife,
@@ -32,7 +34,6 @@ export default function PlayerBoard({
   for (const obj of objects) ensureCard(obj.cardOracleId);
 
   const hand = objects.filter((o) => o.zone === "hand");
-  const library = objects.filter((o) => o.zone === "library");
   const battlefield = objects.filter((o) => o.zone === "battlefield");
   const damageFromMe = mySeat !== null ? player.commanderDamageTaken[mySeat] ?? 0 : 0;
 
@@ -63,7 +64,10 @@ export default function PlayerBoard({
         </div>
       </div>
 
-      <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>Library: {library.length}</div>
+      {/* Hand size is public information even though the cards themselves aren't. */}
+      <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>
+        Library: {librarySize} · Hand: {hand.length}
+      </div>
 
       {isMine && (
         <>
@@ -75,7 +79,6 @@ export default function PlayerBoard({
                   key={obj.instanceId}
                   obj={obj}
                   card={getCard(obj.cardOracleId)}
-                  hidden={false}
                   onMove={(zone) => onMove(obj.instanceId, zone)}
                   onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
                 />
@@ -107,7 +110,6 @@ export default function PlayerBoard({
                     key={obj.instanceId}
                     obj={obj}
                     card={getCard(obj.cardOracleId)}
-                    hidden={false}
                     onMove={(z) => onMove(obj.instanceId, z)}
                     onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
                   />

@@ -7,7 +7,7 @@ const CARD_HEIGHT = 150;
 
 interface Props {
   objects: GameObject[];
-  getCard: (oracleId: string) => Card | undefined;
+  getCard: (oracleId: string | null) => Card | undefined;
   onDropAt: (instanceId: string, x: number, y: number) => void;
   onMoveZone: (instanceId: string, zone: ZoneId) => void;
   onToggleTap: (instanceId: string, tapped: boolean) => void;
@@ -60,7 +60,6 @@ export default function BattlefieldZone({ objects, getCard, onDropAt, onMoveZone
           <GameObjectCard
             obj={obj}
             card={getCard(obj.cardOracleId)}
-            hidden={false}
             onMove={(zone) => onMoveZone(obj.instanceId, zone)}
             onToggleTap={() => onToggleTap(obj.instanceId, !obj.tapped)}
           />

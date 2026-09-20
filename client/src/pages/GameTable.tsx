@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
-import type { GameLogEntry, GameState, TurnPhase, ZoneId } from "@mtg-commander/shared";
+import type { ClientGameState, GameLogEntry, GameObject, TurnPhase, ZoneId } from "@mtg-commander/shared";
 import { socket } from "../socket";
 import { useAuth } from "../context/AuthContext";
 import { useCardCache } from "../hooks/useCardCache";
@@ -32,11 +32,12 @@ export default function GameTable() {
   const [displayName] = useState(() => navState?.displayName || user?.displayName || "Player");
   const [deckId] = useState(() => navState?.deckId ?? null);
 
-  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [gameState, setGameState] = useState<ClientGameState | null>(null);
   const [mySeat, setMySeat] = useState<number | null>(null);
   const [chat, setChat] = useState<Array<{ seat: number; message: string; timestamp: string }>>([]);
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [librarySearch, setLibrarySearch] = useState<GameObject[] | null>(null);
   const { get: getCard, ensure: ensureCard } = useCardCache();
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export default function GameTable() {
     // symmetric add/remove, the first run's cleanup either leaves listeners
     // behind (duplicated log/chat entries) or, if it disconnects the shared
     // socket, kills the second run's connection before it can join.
-    const handleState = (state: GameState) => setGameState(state);
+    const handleState = (state: ClientGameState) => setGameState(state);
     const handleLog = (entry: GameLogEntry) => {
       setGameState((prev) => (prev ? { ...prev, log: [...prev.log, entry] } : prev));
     };
@@ -113,6 +114,22 @@ export default function GameTable() {
     setChatInput("");
   }
 
+  function searchLibrary() {
+    socket.emit("game:searchLibrary", (result) => {
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      for (const obj of result.cards) ensureCard(obj.cardOracleId);
+      setLibrarySearch(result.cards);
+    });
+  }
+
+  function takeFromLibrary(instanceId: string, zone: ZoneId) {
+    moveObject(instanceId, zone);
+    setLibrarySearch((prev) => prev && prev.filter((o) => o.instanceId !== instanceId));
+  }
+
   if (error) {
     return (
       <div className="page">
@@ -148,7 +165,31 @@ export default function GameTable() {
         <button onClick={passTurn}>Pass turn</button>
         <button onClick={drawCard}>Draw a card</button>
         <button onClick={shuffle}>Shuffle library</button>
+        <button onClick={searchLibrary}>Search library</button>
       </div>
+
+      {librarySearch && (
+        <div style={{ border: "1px solid #2a2d36", borderRadius: "8px", padding: "0.75rem", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <strong>Your library ({librarySearch.length})</strong>
+            <button onClick={() => setLibrarySearch(null)}>Close</button>
+          </div>
+          <p style={{ fontSize: "0.8rem", opacity: 0.7, margin: "0.25rem 0" }}>
+            Shown in a random order — the real order stays hidden, so shuffle after you take something.
+          </p>
+          <div style={{ maxHeight: "220px", overflowY: "auto" }}>
+            {[...librarySearch]
+              .sort((a, b) => (getCard(a.cardOracleId)?.name ?? "").localeCompare(getCard(b.cardOracleId)?.name ?? ""))
+              .map((obj) => (
+                <div key={obj.instanceId} style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.85rem" }}>
+                  <span style={{ flex: 1 }}>{getCard(obj.cardOracleId)?.name ?? "..."}</span>
+                  <button onClick={() => takeFromLibrary(obj.instanceId, "hand")}>To hand</button>
+                  <button onClick={() => takeFromLibrary(obj.instanceId, "battlefield")}>To battlefield</button>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         <VideoTile stream={localStream} label={`You (${displayName})`} muted />
@@ -166,6 +207,7 @@ export default function GameTable() {
           mySeat={mySeat}
           getCard={getCard}
           ensureCard={ensureCard}
+          librarySize={gameState.librarySizes[player.seat] ?? 0}
           onMove={moveObject}
           onToggleTap={toggleTap}
           onSetLife={(life) => socket.emit("game:setLife", { seat: player.seat, life })}

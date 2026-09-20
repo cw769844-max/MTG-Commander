@@ -9,7 +9,11 @@ export type ZoneId =
 export interface GameObject {
   /** Unique per game instance (not the same as oracleId, since a card can move/transform). */
   instanceId: string;
-  cardOracleId: string;
+  /**
+   * null when this object is hidden from the player receiving it: an
+   * opponent's hand, or a face-down permanent they don't control.
+   */
+  cardOracleId: string | null;
   zone: ZoneId;
   /** Owner never changes; controller can via effects, but that's manual for now. */
   ownerSeat: number;
@@ -41,6 +45,7 @@ export interface GameLogEntry {
   message: string;
 }
 
+/** The server's authoritative view: every object, with nothing hidden. */
 export interface GameState {
   roomCode: string;
   players: PlayerState[];
@@ -49,6 +54,15 @@ export interface GameState {
   turnSeat: number;
   /** Manual phase tracker; advanced explicitly by whoever has priority, not enforced. */
   phase: TurnPhase;
+}
+
+/**
+ * What a specific player is allowed to see. Library objects are dropped
+ * entirely rather than blanked, because even a stable instanceId per library
+ * card would let a client reconstruct the shuffled order over a game.
+ */
+export interface ClientGameState extends GameState {
+  librarySizes: Record<number, number>;
 }
 
 export type TurnPhase =

@@ -7,7 +7,8 @@ export function useCardCache() {
   const inflight = useRef(new Set<string>());
   const [, forceRender] = useState(0);
 
-  const ensure = useCallback((oracleId: string) => {
+  const ensure = useCallback((oracleId: string | null) => {
+    if (!oracleId) return; // hidden from us: there is nothing to look up
     if (cache.current.has(oracleId) || inflight.current.has(oracleId)) return;
     inflight.current.add(oracleId);
     api
@@ -20,7 +21,7 @@ export function useCardCache() {
       .finally(() => inflight.current.delete(oracleId));
   }, []);
 
-  const get = useCallback((oracleId: string) => cache.current.get(oracleId), []);
+  const get = useCallback((oracleId: string | null) => (oracleId ? cache.current.get(oracleId) : undefined), []);
 
   return { get, ensure };
 }
