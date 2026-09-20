@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 function randomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -9,7 +10,7 @@ function randomCode(): string {
 
 export default function Lobby() {
   const navigate = useNavigate();
-  const [displayName, setDisplayName] = useState("");
+  const { user } = useAuth();
   const [decks, setDecks] = useState<Array<{ id: string; name: string }>>([]);
   const [deckId, setDeckId] = useState<string>("");
   const [joinCode, setJoinCode] = useState("");
@@ -19,23 +20,13 @@ export default function Lobby() {
   }, []);
 
   function enterRoom(roomCode: string) {
-    if (!displayName.trim()) {
-      alert("Enter a display name first.");
-      return;
-    }
-    navigate(`/game/${roomCode}`, { state: { displayName: displayName.trim(), deckId: deckId || null } });
+    navigate(`/game/${roomCode}`, { state: { displayName: user!.displayName, deckId: deckId || null } });
   }
 
   return (
     <div className="page">
       <h1>Play Commander</h1>
-
-      <div style={{ marginBottom: "1rem" }}>
-        <label>
-          Display name{" "}
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-        </label>
-      </div>
+      <p>Playing as {user?.displayName}</p>
 
       <div style={{ marginBottom: "1rem" }}>
         <label>

@@ -34,10 +34,12 @@ model Card {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  createdAt DateTime @default(now())
-  decks     Deck[]
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime @default(now())
+  decks        Deck[]
 }
 
 model Deck {

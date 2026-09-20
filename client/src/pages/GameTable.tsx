@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import type { GameLogEntry, GameState, TurnPhase, ZoneId } from "@mtg-commander/shared";
 import { socket } from "../socket";
+import { useAuth } from "../context/AuthContext";
 import { useCardCache } from "../hooks/useCardCache";
 import { useWebRTCMesh } from "../hooks/useWebRTCMesh";
 import PlayerBoard from "../components/PlayerBoard";
@@ -26,8 +27,9 @@ export default function GameTable() {
   const { roomCode = "" } = useParams<{ roomCode: string }>();
   const location = useLocation();
   const navState = location.state as { displayName?: string; deckId?: string | null } | null;
+  const { user } = useAuth();
 
-  const [displayName] = useState(() => navState?.displayName || prompt("Your display name") || "Player");
+  const [displayName] = useState(() => navState?.displayName || user?.displayName || "Player");
   const [deckId] = useState(() => navState?.deckId ?? null);
 
   const [gameState, setGameState] = useState<GameState | null>(null);

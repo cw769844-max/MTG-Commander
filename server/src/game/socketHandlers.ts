@@ -1,5 +1,7 @@
+import { parse as parseCookie } from "cookie";
 import type { Server, Socket } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@mtg-commander/shared";
+import { SESSION_COOKIE, verifySessionToken } from "../auth";
 import { roomManager } from "./room";
 
 type IOServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -17,13 +19,22 @@ interface SocketData {
 const seatSockets = new Map<string, Map<number, string>>();
 
 export function registerGameHandlers(io: IOServer) {
+  io.use((socket, next) => {
+    const cookies = parseCookie(socket.handshake.headers.cookie ?? "");
+    const userId = verifySessionToken(cookies[SESSION_COOKIE]);
+    if (!userId) {
+      next(new Error("unauthorized"));
+      return;
+    }
+    (socket.data as SocketData).userId = userId;
+    next();
+  });
+
   io.on("connection", (socket: IOSocket) => {
     const data = socket.data as SocketData;
 
     socket.on("room:join", async ({ roomCode, displayName, deckId }, ack) => {
-      // Placeholder identity: one persistent id per socket connection. Swap
-      // for the authenticated user id once real auth lands.
-      const userId = socket.id;
+      const userId = data.userId!;
       const room = roomManager.getOrCreate(roomCode.toUpperCase());
 
       const result = await room.join(userId, displayName, deckId);

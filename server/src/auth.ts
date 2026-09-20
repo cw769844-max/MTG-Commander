@@ -1,5 +1,6 @@
+import bcrypt from "bcryptjs";
 import type { NextFunction, Request, Response } from "express";
-import { prisma } from "./db";
+import jwt from "jsonwebtoken";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -10,19 +11,63 @@ declare global {
   }
 }
 
-/**
- * Placeholder auth: identifies the caller by an `x-user-email` header and
- * upserts a matching User row. Real authentication (sessions/OAuth) is a
- * separate follow-up; this keeps decks attributable per-user in the
- * meantime without blocking the rest of the foundation on it.
- */
-export async function identifyUser(req: Request, _res: Response, next: NextFunction) {
-  const email = String(req.header("x-user-email") ?? "demo@example.com");
-  const user = await prisma.user.upsert({
-    where: { email },
-    create: { email },
-    update: {},
-  });
-  req.userId = user.id;
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET must be set (see server/.env.example)");
+}
+
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+export const SESSION_COOKIE = "session";
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  maxAge: TOKEN_TTL_SECONDS * 1000,
+  path: "/",
+};
+
+interface SessionPayload {
+  sub: string; // userId
+}
+
+export function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
+}
+
+export function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+export function signSessionToken(userId: string): string {
+  const payload: SessionPayload = { sub: userId };
+  return jwt.sign(payload, JWT_SECRET!, { expiresIn: TOKEN_TTL_SECONDS });
+}
+
+/** Returns the authenticated userId, or null if the token is missing/invalid. */
+export function verifySessionToken(token: string | undefined): string | null {
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET!) as SessionPayload;
+    return payload.sub;
+  } catch {
+    return null;
+  }
+}
+
+/** Attaches req.userId when a valid session cookie is present; never rejects. */
+export function attachUser(req: Request, _res: Response, next: NextFunction) {
+  req.userId = verifySessionToken(req.cookies?.[SESSION_COOKIE]) ?? undefined;
+  next();
+}
+
+/** Rejects the request with 401 unless a valid session cookie is present. */
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const userId = verifySessionToken(req.cookies?.[SESSION_COOKIE]);
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  req.userId = userId;
   next();
 }
