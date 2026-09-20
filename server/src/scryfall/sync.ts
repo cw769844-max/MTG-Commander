@@ -1,3 +1,6 @@
+import { createGunzip } from "node:zlib";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { prisma } from "../db";
 import { toPrismaCardData, type ScryfallCardJson } from "./mapper";
 
@@ -7,9 +10,10 @@ const BATCH_SIZE = 100;
 
 interface BulkDataEntry {
   type: string;
-  download_uri: string;
+  /** Gzip-compressed JSON Lines file: one card JSON object per line. */
+  jsonl_download_uri: string;
   updated_at: string;
-  size: number;
+  compressed_size: number;
 }
 
 async function getOracleCardsDownloadUrl(): Promise<string> {
@@ -20,13 +24,23 @@ async function getOracleCardsDownloadUrl(): Promise<string> {
   const body = (await res.json()) as { data: BulkDataEntry[] };
   const oracleCards = body.data.find((entry) => entry.type === "oracle_cards");
   if (!oracleCards) throw new Error("Scryfall bulk-data index did not include an oracle_cards entry");
-  return oracleCards.download_uri;
+  return oracleCards.jsonl_download_uri;
 }
 
-async function downloadOracleCards(url: string): Promise<ScryfallCardJson[]> {
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } });
-  if (!res.ok) throw new Error(`Failed to download oracle_cards bulk file: ${res.status} ${res.statusText}`);
-  return (await res.json()) as ScryfallCardJson[];
+/** Streams the gzip-compressed JSONL file and yields one parsed card per line. */
+async function* streamOracleCards(url: string): AsyncGenerator<ScryfallCardJson> {
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, "Accept-Encoding": "gzip" } });
+  if (!res.ok || !res.body) throw new Error(`Failed to download oracle_cards bulk file: ${res.status} ${res.statusText}`);
+
+  const gunzip = createGunzip();
+  Readable.fromWeb(res.body as import("node:stream/web").ReadableStream).pipe(gunzip);
+  const lines = createInterface({ input: gunzip, crlfDelay: Infinity });
+
+  for await (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    yield JSON.parse(trimmed) as ScryfallCardJson;
+  }
 }
 
 async function upsertBatch(batch: ScryfallCardJson[]): Promise<number> {
@@ -47,20 +61,24 @@ async function main() {
   console.log("Fetching Scryfall bulk-data index...");
   const downloadUrl = await getOracleCardsDownloadUrl();
 
-  console.log(`Downloading oracle_cards from ${downloadUrl} ...`);
-  const cards = await downloadOracleCards(downloadUrl);
-  console.log(`Downloaded ${cards.length} cards. Upserting into local database...`);
+  console.log(`Streaming oracle_cards from ${downloadUrl} ...`);
 
   let written = 0;
-  for (let i = 0; i < cards.length; i += BATCH_SIZE) {
-    const batch = cards.slice(i, i + BATCH_SIZE);
-    written += await upsertBatch(batch);
-    if (i % (BATCH_SIZE * 20) === 0) {
-      console.log(`  ${Math.min(i + BATCH_SIZE, cards.length)} / ${cards.length}`);
+  let seen = 0;
+  let batch: ScryfallCardJson[] = [];
+
+  for await (const card of streamOracleCards(downloadUrl)) {
+    batch.push(card);
+    seen += 1;
+    if (batch.length >= BATCH_SIZE) {
+      written += await upsertBatch(batch);
+      batch = [];
+      if (seen % (BATCH_SIZE * 20) === 0) console.log(`  ${seen} seen, ${written} upserted...`);
     }
   }
+  if (batch.length > 0) written += await upsertBatch(batch);
 
-  console.log(`Done. Upserted ${written} cards.`);
+  console.log(`Done. Saw ${seen} cards, upserted ${written}.`);
 }
 
 main()
