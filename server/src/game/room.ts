@@ -63,15 +63,16 @@ export class Room {
     this.state.players.push(player);
 
     if (deckId) {
-      await this.loadDeckIntoLibrary(seat, deckId);
+      await this.loadDeckIntoLibrary(seat, deckId, userId);
     }
 
     this.addLog(`${displayName} joined the game (seat ${seat}).`, seat);
     return { seat, player };
   }
 
-  private async loadDeckIntoLibrary(seat: number, deckId: string) {
-    const deck = await prisma.deck.findUnique({ where: { id: deckId }, include: { cards: true } });
+  private async loadDeckIntoLibrary(seat: number, deckId: string, userId: string) {
+    // Scoped to the owner so a player can't load someone else's deck by id.
+    const deck = await prisma.deck.findFirst({ where: { id: deckId, ownerId: userId }, include: { cards: true } });
     if (!deck) return;
 
     const commanderCards: GameObject[] = [];

@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import type { Card, DeckLegalityReport } from "@mtg-commander/shared";
+import {
+  DEFAULT_BRACKET_SELF_REPORT,
+  type BracketReport,
+  type BracketSelfReport,
+  type Card,
+  type DeckLegalityReport,
+} from "@mtg-commander/shared";
 import { api } from "../api/client";
+import BracketPanel from "../components/BracketPanel";
 import CardSearch from "../components/CardSearch";
 import ManaCurve from "../components/ManaCurve";
 
@@ -17,12 +24,24 @@ export default function DeckBuilder() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [legality, setLegality] = useState<DeckLegalityReport | null>(null);
   const [saving, setSaving] = useState(false);
+  const [selfReport, setSelfReport] = useState<BracketSelfReport>(DEFAULT_BRACKET_SELF_REPORT);
+  const [bracketReport, setBracketReport] = useState<BracketReport | null>(null);
+  const [savingBracket, setSavingBracket] = useState(false);
 
   useEffect(() => {
     if (!deckId) return;
     api.getDeck(deckId).then(async (deck) => {
       setDeckName(deck.name);
       setLegality(deck.legality);
+      setBracketReport(deck.bracketReport);
+      setSelfReport({
+        bracket: deck.bracket,
+        hasMassLandDenial: deck.hasMassLandDenial,
+        hasChainedExtraTurns: deck.hasChainedExtraTurns,
+        hasTwoCardCombos: deck.hasTwoCardCombos,
+        combosAreLateGameOnly: deck.combosAreLateGameOnly,
+        hasHeavyTutoring: deck.hasHeavyTutoring,
+      });
       const resolved = await Promise.all(
         deck.cards.map(async (dc) => ({
           card: await api.getCard(dc.cardOracleId),
@@ -62,8 +81,20 @@ export default function DeckBuilder() {
       const payload = entries.map((e) => ({ cardOracleId: e.card.oracleId, quantity: e.quantity, isCommander: e.isCommander }));
       const result = await api.saveDeckCards(deckId, payload);
       setLegality(result.legality);
+      setBracketReport(result.bracketReport);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveBracket() {
+    if (!deckId) return;
+    setSavingBracket(true);
+    try {
+      const result = await api.saveDeckBracket(deckId, selfReport);
+      setBracketReport(result.bracketReport);
+    } finally {
+      setSavingBracket(false);
     }
   }
 
@@ -95,6 +126,15 @@ export default function DeckBuilder() {
           </ul>
         </div>
       )}
+
+      <BracketPanel
+        selfReport={selfReport}
+        report={bracketReport}
+        gameChangerCount={legality?.gameChangerCount ?? 0}
+        saving={savingBracket}
+        onChange={setSelfReport}
+        onSave={saveBracket}
+      />
 
       <h2>Add cards</h2>
       <CardSearch onAdd={addCard} />

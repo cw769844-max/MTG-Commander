@@ -20,8 +20,58 @@ function isBackground(card: Card): boolean {
   return card.typeLine.includes("Background");
 }
 
-function hasPartner(card: Card): boolean {
-  return /\bPartner\b/.test(card.oracleText ?? "");
+/** Plain "Partner", which pairs with any other plain-Partner card. */
+function hasPlainPartner(card: Card): boolean {
+  const text = card.oracleText ?? "";
+  return /(^|\n)Partner(?! with)\b/.test(text);
+}
+
+/** "Partner with <name>" only pairs with the one card it names. */
+function partnerWithName(card: Card): string | null {
+  const match = /(^|\n)Partner with ([^(\n]+)/.exec(card.oracleText ?? "");
+  return match ? match[2].trim() : null;
+}
+
+function hasFriendsForever(card: Card): boolean {
+  return /Friends forever/i.test(card.oracleText ?? "");
+}
+
+function hasDoctorsCompanion(card: Card): boolean {
+  return /Doctor's companion/i.test(card.oracleText ?? "");
+}
+
+function isTimeLordDoctor(card: Card): boolean {
+  return card.typeLine.includes("Time Lord Doctor");
+}
+
+function choosesABackground(card: Card): boolean {
+  return /Choose a Background/i.test(card.oracleText ?? "");
+}
+
+/** Returns null when the pair is legal, or an explanation of why it isn't. */
+function invalidPairReason(a: Card, b: Card): string | null {
+  if (hasPlainPartner(a) && hasPlainPartner(b)) return null;
+  if (hasFriendsForever(a) && hasFriendsForever(b)) return null;
+
+  const aPartnerWith = partnerWithName(a);
+  const bPartnerWith = partnerWithName(b);
+  if (aPartnerWith || bPartnerWith) {
+    if (aPartnerWith === b.name && bPartnerWith === a.name) return null;
+    const named = aPartnerWith ?? bPartnerWith;
+    return `${a.name} and ${b.name} can't partner together — "Partner with" only pairs with ${named}.`;
+  }
+
+  if ((choosesABackground(a) && isBackground(b)) || (choosesABackground(b) && isBackground(a))) return null;
+  if (isBackground(a) || isBackground(b)) {
+    return `A Background can only be paired with a commander that says "Choose a Background".`;
+  }
+
+  if ((hasDoctorsCompanion(a) && isTimeLordDoctor(b)) || (hasDoctorsCompanion(b) && isTimeLordDoctor(a))) return null;
+  if (hasDoctorsCompanion(a) || hasDoctorsCompanion(b)) {
+    return `"Doctor's companion" can only be paired with a Time Lord Doctor.`;
+  }
+
+  return `${a.name} and ${b.name} can't be commanders together — they need Partner, Friends forever, "Doctor's companion" with a Doctor, or a commander plus a Background.`;
 }
 
 function unionColorIdentity(cards: Card[]): string[] {
@@ -58,19 +108,21 @@ export function validateDeckLegality(entries: ResolvedDeckEntry[]): DeckLegality
     });
   } else if (commanders.length === 2) {
     const [a, b] = commanders;
-    const validPair =
-      (hasPartner(a) && hasPartner(b)) || (isBackground(a) && !isBackground(b)) || (isBackground(b) && !isBackground(a));
-    if (!validPair) {
-      issues.push({
-        severity: "error",
-        code: "COMMANDER_CANNOT_COMMAND",
-        message: `${a.name} and ${b.name} cannot both be commanders (need Partner, or a commander + Background).`,
-      });
+    const reason = invalidPairReason(a, b);
+    if (reason) {
+      issues.push({ severity: "error", code: "COMMANDER_CANNOT_COMMAND", message: reason });
     }
+  } else if (commanders.length === 1 && isBackground(commanders[0])) {
+    issues.push({
+      severity: "error",
+      code: "COMMANDER_CANNOT_COMMAND",
+      message: `${commanders[0].name} is a Background; it can only be a second commander alongside one that says "Choose a Background".`,
+      cardOracleId: commanders[0].oracleId,
+    });
   }
 
   for (const commander of commanders) {
-    if (!commander.canBeCommander && !isBackground(commander)) {
+    if (!commander.canBeCommander) {
       issues.push({
         severity: "error",
         code: "COMMANDER_CANNOT_COMMAND",

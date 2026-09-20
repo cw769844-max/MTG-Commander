@@ -5,6 +5,7 @@ import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@mtg-commander/shared";
+import { errorHandler } from "./async-handler";
 import { requireAuth } from "./auth";
 import { registerGameHandlers } from "./game/socketHandlers";
 import { authRouter } from "./routes/auth";
@@ -24,6 +25,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRouter);
 app.use("/api/cards", cardsRouter);
 app.use("/api/decks", requireAuth, decksRouter);
+
+app.use(errorHandler);
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {

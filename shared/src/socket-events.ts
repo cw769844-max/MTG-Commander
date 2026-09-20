@@ -1,4 +1,5 @@
 import type { GameLogEntry, GameState, TurnPhase, ZoneId } from "./game";
+import type { MatchFound, PodSize, QueueStatus } from "./matchmaking";
 
 /** Client -> server events. */
 export interface ClientToServerEvents {
@@ -22,6 +23,16 @@ export interface ClientToServerEvents {
 
   /** WebRTC signaling relay; server just forwards to the target seat. */
   "rtc:signal": (payload: { toSeat: number; data: unknown }) => void;
+
+  /**
+   * The bracket is read from the deck rather than taken from the client, so a
+   * player can't queue into a bracket their deck doesn't claim.
+   */
+  "matchmaking:join": (
+    payload: { deckId: string; podSize: PodSize },
+    ack: (result: { ok: true; status: QueueStatus } | { ok: false; error: string }) => void
+  ) => void;
+  "matchmaking:leave": () => void;
 }
 
 /** Server -> client events. */
@@ -33,4 +44,7 @@ export interface ServerToClientEvents {
   "chat:message": (payload: { seat: number; message: string; timestamp: string }) => void;
   "rtc:signal": (payload: { fromSeat: number; data: unknown }) => void;
   "error": (payload: { message: string }) => void;
+
+  "matchmaking:status": (status: QueueStatus) => void;
+  "matchmaking:matched": (match: MatchFound) => void;
 }

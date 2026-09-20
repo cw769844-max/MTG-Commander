@@ -1,4 +1,11 @@
-import type { AuthUser, Card, CardSearchResult, DeckLegalityReport } from "@mtg-commander/shared";
+import type {
+  AuthUser,
+  BracketReport,
+  BracketSelfReport,
+  Card,
+  CardSearchResult,
+  DeckLegalityReport,
+} from "@mtg-commander/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
 
@@ -35,9 +42,29 @@ export const api = {
   searchCards: (q: string) => request<CardSearchResult>(`/api/cards/search?q=${encodeURIComponent(q)}`),
   getCard: (oracleId: string) => request<Card>(`/api/cards/${oracleId}`),
 
-  listDecks: () => request<Array<{ id: string; name: string }>>("/api/decks"),
-  createDeck: (name: string) => request<{ id: string; name: string }>("/api/decks", { method: "POST", body: JSON.stringify({ name }) }),
-  getDeck: (id: string) => request<{ id: string; name: string; cards: Array<{ cardOracleId: string; quantity: number; isCommander: boolean }>; legality: DeckLegalityReport }>(`/api/decks/${id}`),
+  listDecks: () => request<DeckSummary[]>("/api/decks"),
+  createDeck: (name: string) => request<DeckSummary>("/api/decks", { method: "POST", body: JSON.stringify({ name }) }),
+  getDeck: (id: string) =>
+    request<
+      DeckSummary & {
+        cards: Array<{ cardOracleId: string; quantity: number; isCommander: boolean }>;
+        legality: DeckLegalityReport;
+        bracketReport: BracketReport;
+      }
+    >(`/api/decks/${id}`),
   saveDeckCards: (id: string, cards: Array<{ cardOracleId: string; quantity: number; isCommander: boolean }>) =>
-    request<{ ok: true; legality: DeckLegalityReport }>(`/api/decks/${id}/cards`, { method: "PUT", body: JSON.stringify({ cards }) }),
+    request<{ ok: true; legality: DeckLegalityReport; bracketReport: BracketReport }>(`/api/decks/${id}/cards`, {
+      method: "PUT",
+      body: JSON.stringify({ cards }),
+    }),
+  saveDeckBracket: (id: string, report: BracketSelfReport) =>
+    request<{ ok: true; bracketReport: BracketReport }>(`/api/decks/${id}/bracket`, {
+      method: "PUT",
+      body: JSON.stringify(report),
+    }),
 };
+
+export interface DeckSummary extends BracketSelfReport {
+  id: string;
+  name: string;
+}

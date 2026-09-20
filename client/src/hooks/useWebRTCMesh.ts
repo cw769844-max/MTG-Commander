@@ -21,21 +21,32 @@ export function useWebRTCMesh(socket: GameSocket, mySeat: number | null, connect
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
   const peers = useRef(new Map<number, RTCPeerConnection>());
+  // Mirrors localStream: the cleanup closure below would otherwise capture the
+  // null from the first render and leave the camera light on after leaving.
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
-        if (!cancelled) setLocalStream(stream);
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        localStreamRef.current = stream;
+        setLocalStream(stream);
       })
       .catch((err) => console.warn("Camera/mic unavailable:", err));
+
     return () => {
       cancelled = true;
-      localStream?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      setLocalStream(null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   function ensurePeer(seat: number): RTCPeerConnection {
@@ -110,10 +121,28 @@ export function useWebRTCMesh(socket: GameSocket, mySeat: number | null, connect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, localStream]);
 
+  // Tear down connections to seats that have left, so their tile disappears
+  // and the connection isn't left half-open.
   useEffect(() => {
+    for (const [seat, pc] of peers.current) {
+      if (connectedSeats.includes(seat)) continue;
+      pc.close();
+      peers.current.delete(seat);
+      setRemoteStreams((prev) => {
+        if (!(seat in prev)) return prev;
+        const next = { ...prev };
+        delete next[seat];
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedSeats.join(",")]);
+
+  useEffect(() => {
+    const openPeers = peers.current;
     return () => {
-      for (const pc of peers.current.values()) pc.close();
-      peers.current.clear();
+      for (const pc of openPeers.values()) pc.close();
+      openPeers.clear();
     };
   }, []);
 

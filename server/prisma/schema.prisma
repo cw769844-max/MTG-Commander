@@ -50,6 +50,15 @@ model Deck {
   cards     DeckCard[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  // Commander bracket self-report. Game Changer counts come from card data;
+  // everything here is what the deck's owner says about their own deck.
+  bracket               Int     @default(2)
+  hasMassLandDenial     Boolean @default(false)
+  hasChainedExtraTurns  Boolean @default(false)
+  hasTwoCardCombos      Boolean @default(false)
+  combosAreLateGameOnly Boolean @default(false)
+  hasHeavyTutoring      Boolean @default(false)
 }
 
 model DeckCard {

@@ -22,16 +22,31 @@ export interface ScryfallCardJson {
   layout?: string;
 }
 
-export function canBeCommander(card: ScryfallCardJson): boolean {
-  const text = card.oracle_text ?? card.card_faces?.[0]?.oracle_text ?? "";
-  const isLegendaryCreature = /Legendary/.test(card.type_line) && /Creature/.test(card.type_line);
-  const explicitlyAllowed = /can be your commander/i.test(text);
-  return isLegendaryCreature || explicitlyAllowed;
+/**
+ * Layouts that aren't real playable cards (art cards, tokens, emblems, and the
+ * double-sided Secret Lair reprints), all of which land in the oracle_cards
+ * dump with empty rules text and a "Card // Card" type line.
+ */
+const NON_CARD_LAYOUTS = new Set(["art_series", "token", "double_faced_token", "emblem", "reversible_card"]);
+
+export function isNonPlayableEntry(card: ScryfallCardJson): boolean {
+  if (card.layout && NON_CARD_LAYOUTS.has(card.layout)) return true;
+  return card.type_line === "Card // Card";
 }
 
-/** Converts a raw Scryfall bulk-data entry into the row shape we store in SQLite. */
-export function toPrismaCardData(card: ScryfallCardJson): Omit<PrismaCard, "updatedAt"> | null {
-  if (!card.oracle_id) return null; // skip reversible/token oddities without a stable oracle id
+/**
+ * Converts a raw Scryfall bulk-data entry into the row shape we store in SQLite.
+ *
+ * Commander eligibility comes from Scryfall's own `is:commander` set rather
+ * than from the card's rules text: cards like Shorikai, Genesis Engine are
+ * legal commanders without ever saying "can be your commander".
+ */
+export function toPrismaCardData(
+  card: ScryfallCardJson,
+  commanderOracleIds: ReadonlySet<string>
+): Omit<PrismaCard, "updatedAt"> | null {
+  if (!card.oracle_id) return null; // skip oddities without a stable oracle id
+  if (isNonPlayableEntry(card)) return null;
 
   const image = card.image_uris ?? card.card_faces?.[0]?.image_uris;
 
@@ -52,7 +67,7 @@ export function toPrismaCardData(card: ScryfallCardJson): Omit<PrismaCard, "upda
     scryfallUri: card.scryfall_uri,
     commanderLegality: (card.legalities.commander as Card["commanderLegality"]) ?? "not_legal",
     isGameChanger: card.game_changer ?? false,
-    canBeCommander: canBeCommander(card),
+    canBeCommander: commanderOracleIds.has(card.oracle_id),
   };
 }
 

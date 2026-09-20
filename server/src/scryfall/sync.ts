@@ -43,8 +43,31 @@ async function* streamOracleCards(url: string): AsyncGenerator<ScryfallCardJson>
   }
 }
 
-async function upsertBatch(batch: ScryfallCardJson[]): Promise<number> {
-  const rows = batch.map(toPrismaCardData).filter((row): row is NonNullable<typeof row> => row !== null);
+/**
+ * Scryfall computes commander eligibility itself, covering cases that rules
+ * text alone doesn't reveal (Shorikai, Genesis Engine is a legal commander but
+ * never says so on the card). Paginating `is:commander` is ~22 requests.
+ */
+async function fetchCommanderOracleIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let url: string | null = "https://api.scryfall.com/cards/search?q=is%3Acommander&unique=cards";
+
+  while (url) {
+    const res: Response = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } });
+    if (!res.ok) throw new Error(`Failed to page is:commander search: ${res.status} ${res.statusText}`);
+    const body = (await res.json()) as { data: Array<{ oracle_id?: string }>; has_more: boolean; next_page?: string };
+    for (const card of body.data) if (card.oracle_id) ids.add(card.oracle_id);
+    url = body.has_more ? body.next_page ?? null : null;
+    await new Promise((resolve) => setTimeout(resolve, 100)); // Scryfall asks for ~10 req/s max
+  }
+
+  return ids;
+}
+
+async function upsertBatch(batch: ScryfallCardJson[], commanderOracleIds: ReadonlySet<string>): Promise<string[]> {
+  const rows = batch
+    .map((card) => toPrismaCardData(card, commanderOracleIds))
+    .filter((row): row is NonNullable<typeof row> => row !== null);
   await prisma.$transaction(
     rows.map((row) =>
       prisma.card.upsert({
@@ -54,16 +77,31 @@ async function upsertBatch(batch: ScryfallCardJson[]): Promise<number> {
       })
     )
   );
-  return rows.length;
+  return rows.map((row) => row.oracleId);
+}
+
+/** Drops rows for entries Scryfall no longer publishes, or that we now filter out. */
+async function deleteStaleRows(keptOracleIds: ReadonlySet<string>): Promise<number> {
+  const existing = await prisma.card.findMany({ select: { oracleId: true } });
+  const stale = existing.map((row) => row.oracleId).filter((id) => !keptOracleIds.has(id));
+
+  for (let i = 0; i < stale.length; i += 500) {
+    await prisma.card.deleteMany({ where: { oracleId: { in: stale.slice(i, i + 500) } } });
+  }
+  return stale.length;
 }
 
 async function main() {
   console.log("Fetching Scryfall bulk-data index...");
   const downloadUrl = await getOracleCardsDownloadUrl();
 
+  console.log("Fetching the is:commander set...");
+  const commanderOracleIds = await fetchCommanderOracleIds();
+  console.log(`  ${commanderOracleIds.size} commander-eligible cards.`);
+
   console.log(`Streaming oracle_cards from ${downloadUrl} ...`);
 
-  let written = 0;
+  const keptOracleIds = new Set<string>();
   let seen = 0;
   let batch: ScryfallCardJson[] = [];
 
@@ -71,14 +109,18 @@ async function main() {
     batch.push(card);
     seen += 1;
     if (batch.length >= BATCH_SIZE) {
-      written += await upsertBatch(batch);
+      for (const id of await upsertBatch(batch, commanderOracleIds)) keptOracleIds.add(id);
       batch = [];
-      if (seen % (BATCH_SIZE * 20) === 0) console.log(`  ${seen} seen, ${written} upserted...`);
+      if (seen % (BATCH_SIZE * 20) === 0) console.log(`  ${seen} seen, ${keptOracleIds.size} upserted...`);
     }
   }
-  if (batch.length > 0) written += await upsertBatch(batch);
+  if (batch.length > 0) {
+    for (const id of await upsertBatch(batch, commanderOracleIds)) keptOracleIds.add(id);
+  }
 
-  console.log(`Done. Saw ${seen} cards, upserted ${written}.`);
+  const deleted = await deleteStaleRows(keptOracleIds);
+
+  console.log(`Done. Saw ${seen} entries, upserted ${keptOracleIds.size}, removed ${deleted} stale/non-card rows.`);
 }
 
 main()
