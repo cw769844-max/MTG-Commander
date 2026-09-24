@@ -15,7 +15,9 @@
     "test:watch": "vitest",
     "prisma:generate": "npm run prisma:generate --workspace=server",
     "setup": "npm install && npm run prisma:generate && npm run build --workspace=shared",
-    "verify": "npm run build && npm run test"
+    "verify": "npm run build && npm run test",
+    "playtest": "npm run build && npm run playtest:check --workspace=server && npm run start --workspace=server",
+    "playtest:check": "npm run playtest:check --workspace=server"
   },
   "devDependencies": {
     "vitest": "^2.1.8"

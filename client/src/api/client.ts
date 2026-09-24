@@ -7,7 +7,13 @@ import type {
   DeckLegalityReport,
 } from "@mtg-commander/shared";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
+/**
+ * Empty means same-origin, which is how the app is served when the server
+ * hosts the built client. A hardcoded localhost would point a guest's browser
+ * at their own machine. VITE_API_BASE is only for running the Vite dev server
+ * on its own port.
+ */
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export class ApiError extends Error {
   status: number;

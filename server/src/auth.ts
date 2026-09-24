@@ -19,10 +19,20 @@ if (!JWT_SECRET) {
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 export const SESSION_COOKIE = "session";
+
+/**
+ * A secure cookie is never sent over plain HTTP, so tying this to NODE_ENV
+ * would silently break login on a LAN playtest served over http. Set
+ * COOKIE_SECURE=true whenever the app is reachable over https.
+ */
+const COOKIE_SECURE = process.env.COOKIE_SECURE
+  ? process.env.COOKIE_SECURE === "true"
+  : process.env.NODE_ENV === "production";
+
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
+  secure: COOKIE_SECURE,
   maxAge: TOKEN_TTL_SECONDS * 1000,
   path: "/",
 };
