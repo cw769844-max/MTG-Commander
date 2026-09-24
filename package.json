@@ -10,6 +10,14 @@
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "sync:cards": "npm run sync:cards --workspace=server",
-    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client"
+    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "npm run prisma:generate --workspace=server",
+    "setup": "npm install && npm run prisma:generate && npm run build --workspace=shared",
+    "verify": "npm run build && npm run test"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
   }
 }

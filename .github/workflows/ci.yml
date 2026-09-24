@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    env:
+      # Prisma needs a datasource URL to generate a client; no database is
+      # touched, and the tests that use one run against a local SQLite file.
+      DATABASE_URL: "file:./ci.db"
+      JWT_SECRET: "ci-only-secret"
+      # Never reach out to Scryfall from CI.
+      CARD_SYNC_INTERVAL_HOURS: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Typecheck and build all workspaces
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
